@@ -11,9 +11,16 @@
 
   function create(config) {
     // A plain-text POST needs no CORS pre-flight, which Apps Script cannot answer.
+    // Apps Script can be slow to start, but a request never waits more than 90 seconds.
     async function post(body) {
-      const response=await root.fetch(config.apiUrl,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body:JSON.stringify(body),redirect:'follow',credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer'});
+      const controller=typeof root.AbortController==='function'?new root.AbortController():null;
+      const timer=controller?root.setTimeout(()=>controller.abort(),90000):null;
+      let response;
+      try {
+        response=await root.fetch(config.apiUrl,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+          body:JSON.stringify(body),redirect:'follow',credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer',
+          signal:controller?controller.signal:undefined});
+      } finally {if(timer)root.clearTimeout(timer);}
       if(!response.ok)throw Error('HTTP '+response.status);
       const result=await response.json();
       if(!result||typeof result!=='object'||typeof result.ok!=='boolean')throw Error('Unexpected answer');
