@@ -41,6 +41,9 @@
   const valueFields=[['current_value','Current value (£)','money'],['current_value_date','Valuation date','date'],['valuation_source','Source (e.g. Zoopla, surveyor)','text']];
   const mortgageFields=[['current_balance','Current balance (£)','money'],['balance_date','Balance date','date'],['monthly_payment','Monthly payment (£)','money'],
     ['interest_rate','Interest rate (%)','rate'],['fixed_until','Fixed until','date']];
+  const rentFields=[['monthly_rent','Rent per month (£)','money'],['current_rent_effective_date','New rent takes effect','date'],
+    ['last_rent_increase_date','Last rent increase','date'],['next_rent_review_date','Next rent review','date']];
+  const renewalFields=[['renewal_status','Renewal status','select']];
   const mntTitles={create:'Add job',update:'Edit job',complete:'Mark completed',done:'Mark done'};
   const ccFields=[['type','Type','select'],['status','Status','select'],['due_date','Due date','date'],['period_start','Period start','date'],
     ['period_end','Period end','date'],['action_date','Action date','date'],['completed_date','Completed date','date'],
@@ -127,6 +130,36 @@
       select.value=filter;
     };
     const when=value=>value?date(value):'Not recorded';
+    // PWA.7 quick edits (value, mortgage, rent, renewal): one form; the fields travel with it.
+    const quick=options.form;
+    if(quick&&quick.quick&&response.permissions&&response.permissions.can_write===true){
+      heading(quick.title);
+      const box=card(main,quick.title);
+      if(quick.subtitle)add(box.el,'p',quick.subtitle,'subtext');
+      if(quick.issues&&quick.issues.length){const alert=add(box.el,'div',undefined,'note');alert.setAttribute('role','alert');
+        add(alert,'p','Please fix:');const ul=add(alert,'ul');for(const issue of quick.issues)add(ul,'li',issue);}
+      if(quick.message){const note=add(box.el,'p',quick.message,'note');note.setAttribute('role','alert');}
+      const f=add(box.el,'form',undefined,'cc-form');f.setAttribute('data-quick-form','true');
+      for(const [name,label,kind] of quick.fields){
+        const wrap=add(f,'label',undefined,'field');add(wrap,'span',label);
+        const current=typeof quick.values[name]==='string'?quick.values[name]:'';
+        let control;
+        if(kind==='select'){control=add(wrap,'select');
+          const choices=(quick.choices[name]||[]).slice();
+          if(current&&!choices.includes(current))choices.unshift(current);
+          if(!current)choices.unshift('');
+          for(const choice of choices){const o=add(control,'option',choice?words(choice):'Not recorded');o.value=choice;if(choice===current)o.selected=true;}}
+        else {control=add(wrap,'input');control.type=kind==='date'?'date':'text';if(kind==='money'||kind==='rate')control.setAttribute('inputmode','decimal');}
+        control.name=name;control.setAttribute('name',name);control.value=current;
+      }
+      const actions=add(f,'div',undefined,'actions');
+      const save=add(actions,'button',quick.saving?'Saving…':'Save','button');save.type='submit';save.disabled=quick.saving===true;save.setAttribute('data-mutation',quick.kind+'-update');
+      button(actions,'Cancel','data-quick-cancel');
+      return;
+    }
+    // A small button that opens a quick edit (PRIMARY only).
+    const quickButton=(parent,text,kind,id)=>{if(response.permissions&&response.permissions.can_write===true){
+      const el=button(parent,text,'data-quick');el.setAttribute('data-quick',kind);if(id)el.setAttribute('data-quick-id',id);el.className='button small';el.setAttribute('data-mutation',kind+'-update');}};
     const metricList=(parent,entries)=>{const dl=add(parent,'dl',undefined,'metrics');for(const [label,value] of entries){const m=add(dl,'div');add(m,'dt',label);add(m,'dd',value);}return dl;};
     const levelBadge=(parent,attention)=>attention.count?badge(parent,attention.level):add(parent,'span','Nothing to review','badge neutral');
     if(page==='properties'){
@@ -149,36 +182,16 @@
       const canWrite=response.permissions.can_write===true,form=options.form;
       if(!item){heading('Property');const box=card(main,'Property not found','placeholder');add(box.el,'p','This property is not in the portfolio.');const back=add(box.el,'a','Back to Properties','button');back.href='#properties';return;}
       const details=item.details||{},t=details.tenancy,m=details.mortgage;
-      if(form&&canWrite&&(form.kind==='value'||form.kind==='mortgage')){
-        const fields=form.kind==='value'?valueFields:mortgageFields,title=form.kind==='value'?'Update value':'Update mortgage';
-        heading(title);
-        const box=card(main,title);
-        add(box.el,'p',form.kind==='value'?item.property_id+' · '+recorded(item.address):item.property_id+' · '+(m?[m.lender,m.mortgage_id].filter(Boolean).join(' · '):''),'subtext');
-        if(form.issues&&form.issues.length){const alert=add(box.el,'div',undefined,'note');alert.setAttribute('role','alert');
-          add(alert,'p','Please fix:');const ul=add(alert,'ul');for(const issue of form.issues)add(ul,'li',issue);}
-        if(form.message){const note=add(box.el,'p',form.message,'note');note.setAttribute('role','alert');}
-        const f=add(box.el,'form',undefined,'cc-form');f.setAttribute('data-quick-form','true');
-        for(const [name,label,kind] of fields){
-          const wrap=add(f,'label',undefined,'field');add(wrap,'span',label);
-          const control=add(wrap,'input');control.type=kind==='date'?'date':'text';if(kind==='money'||kind==='rate')control.setAttribute('inputmode','decimal');
-          control.name=name;control.setAttribute('name',name);control.value=typeof form.values[name]==='string'?form.values[name]:'';
-        }
-        const actions=add(f,'div',undefined,'actions');
-        const save=add(actions,'button',form.saving?'Saving…':'Save','button');save.type='submit';save.disabled=form.saving===true;save.setAttribute('data-mutation',form.kind+'-update');
-        button(actions,'Cancel','data-quick-cancel');
-        return;
-      }
       heading(item.property_id);
       const grid=add(main,'div',undefined,'grid');
       const alertLine=(parent,alertValue,label)=>{if(alertValue){const line=add(parent,'div',undefined,'item-top');badge(line,alertValue.level);add(line,'span',label+' '+dayText(alertValue.days),'item-scope');}};
-      const editButton=(parent,text,attribute)=>{if(canWrite){const el=button(parent,text,attribute);el.className='button small';el.setAttribute('data-mutation',attribute==='data-edit-value'?'value-update':'mortgage-update');}};
       // Value and money summary.
       const value=card(grid,'Value','attention-card');levelBadge(value.head,item.attention.total);
       add(value.el,'p',recorded(item.address)+(item.status?' · '+words(item.status):''),'subtext');
       metricList(value.el,[['Current value',gbp(item.current_value)],['Valued',when(item.current_value_date)],['Source',recorded(item.valuation_source)],
         ['LTV',percent(item.finance.ltv)],['Rent per month',gbp(item.tenancy.monthly_rent)],['Mortgage payment (interest) per month',gbp(item.mortgage.monthly_payment)],
         ['Cashflow per month',gbp(item.finance.monthly_cashflow_before_operating_expenses)],['Principal repaid',gbp(item.finance.principal_repaid_total)]]).className='metrics compact';
-      {const row=add(value.el,'div',undefined,'actions start');editButton(row,'Update value','data-edit-value');}
+      {const row=add(value.el,'div',undefined,'actions start');quickButton(row,'Update value','value');}
       // Mortgage.
       const mortgage=card(grid,'Mortgage');if(m)add(mortgage.head,'span',m.mortgage_id,'item-scope');
       if(m){
@@ -187,7 +200,7 @@
           ['Rate',known(m.interest_rate)?percent(m.interest_rate)+(m.rate_type?' · '+words(m.rate_type):''):'Not available'],['Fixed until',when(m.fixed_until)],
           ['Current balance',gbp(m.current_balance)],['Balance date',when(m.balance_date)],['Payment per month',gbp(m.monthly_payment)],
           ['Original balance',gbp(m.original_balance)],['Start',when(m.start_date)],['End',when(m.end_date)],['Product fee',gbp(m.product_fee)]]).className='metrics compact';
-        const row=add(mortgage.el,'div',undefined,'actions start');editButton(row,'Update mortgage','data-edit-mortgage');
+        const row=add(mortgage.el,'div',undefined,'actions start');quickButton(row,'Update mortgage','mortgage');
       } else empty(mortgage.el,'No current mortgage.');
       if(details.previous_mortgages&&details.previous_mortgages.length){const ul=list(mortgage.el);
         for(const r of details.previous_mortgages)add(ul,'li','Earlier: '+r.mortgage_id+(r.lender?' · '+r.lender:'')+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – '),'subtext');}
@@ -201,6 +214,7 @@
           ['Deposit',gbp(t.deposit_amount)],['Deposit scheme',recorded(t.deposit_scheme)],['Deposit protected',when(t.deposit_protected_date)],
           ['Deposit reference',recorded(t.deposit_reference)],['Right to rent',t.right_to_rent_status?words(t.right_to_rent_status):'Not recorded'],
           ['Right to rent checked',when(t.right_to_rent_check_date)]]).className='metrics compact';
+        const row=add(tenancy.el,'div',undefined,'actions start');quickButton(row,'Update rent','rent');
       } else empty(tenancy.el,'No current tenancy.');
       if(details.previous_tenancies&&details.previous_tenancies.length){const ul=list(tenancy.el);
         for(const r of details.previous_tenancies)add(ul,'li','Earlier: '+r.tenancy_id+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – '),'subtext');}
@@ -212,7 +226,9 @@
       if(!certs.length)empty(compliance.el,'No current certificates recorded.');
       {const ul=list(compliance.el);for(const r of certs){const li=add(ul,'li'),top=add(li,'div',undefined,'item-top');
         if(r.level)badge(top,r.level);else add(top,'span',words(r.status),'badge neutral');add(top,'span',words(r.compliance_type),'item-scope');
-        add(li,'p',r.expiry_date?'Expiry '+date(r.expiry_date)+(r.days_to_expiry!==null?' · '+expiryText(r.days_to_expiry):''):'No expiry date recorded','subtext');}}
+        add(li,'p',r.expiry_date?'Expiry '+date(r.expiry_date)+(r.days_to_expiry!==null?' · '+expiryText(r.days_to_expiry):''):'No expiry date recorded','subtext');
+        if(r.renewal_status)add(li,'p','Renewal '+words(r.renewal_status).toLowerCase(),'subtext');
+        {const row=add(li,'div',undefined,'actions start');quickButton(row,'Renewal status','renewal',r.compliance_id);}}}
       const repairs=card(grid,'Maintenance');
       {const link=add(repairs.head,'a','All');link.href='#maintenance';link.setAttribute('data-filter-property',item.property_id);}
       const jobs=[...mine(d.maintenance.groups.open),...mine(d.maintenance.groups.recurring)];
@@ -383,6 +399,7 @@
         add(row,'p',who.join(' · '),'subtext');
         const alarms=[r.smoke_alarms_checked===true?'Smoke alarms checked':'',r.co_alarms_checked===true?'CO alarms checked':''].filter(Boolean);
         if(alarms.length)add(row,'p',alarms.join(' · '),'subtext');
+        if(r.group!=='history'){const actions=add(row,'div',undefined,'actions start');quickButton(actions,'Renewal status','renewal',r.compliance_id);}
       };
       const grid=add(main,'div',undefined,'grid');
       const section=(name,title,records,closed)=>{
@@ -485,7 +502,7 @@
       doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
       const timing=doc.getElementById('timing');if(timing)timing.textContent=all?timingText(all):'';
       const title=doc.getElementById('screen-title');
-      if(title)title.textContent=form?(form.kind==='maintenance'?mntTitles[form.mode]:form.kind==='value'?'Update value':form.kind==='mortgage'?'Update mortgage':
+      if(title)title.textContent=form?(form.quick?form.title:form.kind==='maintenance'?mntTitles[form.mode]:
         form.mode==='create'?'Add record':'Edit record'):page()==='property'?route().propertyId:titles[page()]||'Home';
       const refresh=doc.getElementById('refresh');
       if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
@@ -495,7 +512,7 @@
       render(doc,main,response,page(),loading,options);
       wireCompany(response);
       wireMaintenance(response);
-      wireProperty(response);
+      wireQuick(response);
       // "All" links on a property page open the full list filtered to that property.
       for(const link of main.querySelectorAll('[data-filter-property]'))link.addEventListener('click',()=>{propertyFilter=link.getAttribute('data-filter-property');});
       const filter=main.querySelector('[data-property-filter]');
@@ -571,21 +588,33 @@
         send(current,current.mode==='create'?'maintenance.create':'maintenance.update',payload);
       });
     }
-    // PWA.7: update a property's value or its current mortgage's figures (existing rows only).
-    function wireProperty(response){
-      if(page()!=='property'||!response||!response.ok||typeof adapter.save!=='function')return;
-      const item=response.data.portfolio.properties.find(p=>p.property_id===route().propertyId);if(!item)return;
+    // PWA.7 quick edits on the property page and the Compliance list (existing rows only).
+    function wireQuick(response){
+      if(!['property','compliance'].includes(page())||!response||!response.ok||typeof adapter.save!=='function')return;
       const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
       const str=value=>value===null||value===undefined?'':String(value);
-      const open=kind=>{
-        const m=item.details&&item.details.mortgage;
-        const values=kind==='value'?{current_value:str(item.current_value),current_value_date:today,valuation_source:str(item.valuation_source)}:
-          {current_balance:str(m.current_balance),balance_date:today,monthly_payment:str(m.monthly_payment),interest_rate:str(m.interest_rate),fixed_until:str(m.fixed_until)};
-        form={kind,mode:'update',record:kind==='value'?{id:item.property_id,version:item.version}:{id:m.mortgage_id,version:m.version},
-          values,request_id:adapter.newRequestId(),issues:[],message:''};paint();main.focus();root.scrollTo(0,0);
+      const complianceData=page()==='property'?response.data.compliance:response.data;
+      const item=page()==='property'?response.data.portfolio.properties.find(p=>p.property_id===route().propertyId):null;
+      const specs={
+        value:()=>({title:'Update value',subtitle:item.property_id+' · '+(item.address||''),fields:valueFields,action:'property.update',idField:'property_id',
+          record:{id:item.property_id,version:item.version},
+          values:{current_value:str(item.current_value),current_value_date:today,valuation_source:str(item.valuation_source)}}),
+        mortgage:()=>{const m=item.details.mortgage;return {title:'Update mortgage',subtitle:item.property_id+' · '+[m.lender,m.mortgage_id].filter(Boolean).join(' · '),
+          fields:mortgageFields,action:'mortgage.update',idField:'mortgage_id',record:{id:m.mortgage_id,version:m.version},
+          values:{current_balance:str(m.current_balance),balance_date:today,monthly_payment:str(m.monthly_payment),interest_rate:str(m.interest_rate),fixed_until:str(m.fixed_until)}};},
+        rent:()=>{const t=item.details.tenancy;return {title:'Update rent',subtitle:item.property_id+' · '+t.tenancy_id,fields:rentFields,action:'tenancy.update',idField:'tenancy_id',
+          record:{id:t.tenancy_id,version:t.version},values:{monthly_rent:str(t.monthly_rent),current_rent_effective_date:str(t.current_rent_effective_date),
+            last_rent_increase_date:str(t.last_rent_increase_date),next_rent_review_date:str(t.next_rent_review_date)}};},
+        renewal:id=>{const r=[...complianceData.groups.due,...complianceData.groups.current,...complianceData.groups.history].find(x=>x.compliance_id===id);
+          return {title:'Renewal status',subtitle:[r.property_id,words(r.compliance_type),r.expiry_date?'expiry '+date(r.expiry_date):''].filter(Boolean).join(' · '),
+            fields:renewalFields,choices:complianceData.choices,action:'compliance.update',idField:'compliance_id',record:{id:r.compliance_id,version:r.version},
+            values:{renewal_status:str(r.renewal_status)}};}
       };
-      const value=main.querySelector('[data-edit-value]');if(value)value.addEventListener('click',()=>open('value'));
-      const mortgage=main.querySelector('[data-edit-mortgage]');if(mortgage)mortgage.addEventListener('click',()=>open('mortgage'));
+      for(const el of main.querySelectorAll('[data-quick]'))el.addEventListener('click',()=>{
+        const spec=specs[el.getAttribute('data-quick')](el.getAttribute('data-quick-id'));
+        form={quick:true,kind:el.getAttribute('data-quick'),mode:'update',choices:{},...spec,request_id:adapter.newRequestId(),issues:[],message:''};
+        paint();main.focus();root.scrollTo(0,0);
+      });
       const cancel=main.querySelector('[data-quick-cancel]');if(cancel)cancel.addEventListener('click',()=>{form=null;paint();});
       const element=main.querySelector('[data-quick-form]');
       if(element)element.addEventListener('submit',event=>{
@@ -593,9 +622,7 @@
         const current=form,values={...current.values};
         for(const field of element.querySelectorAll('[name]'))values[field.getAttribute('name')]=String(field.value||'');
         current.values=values;
-        const payload={request_id:current.request_id,fields:values,expected_version:current.record.version};
-        if(current.kind==='value'){payload.property_id=current.record.id;send(current,'property.update',payload);}
-        else {payload.mortgage_id=current.record.id;send(current,'mortgage.update',payload);}
+        send(current,current.action,{request_id:current.request_id,fields:values,expected_version:current.record.version,[current.idField]:current.record.id});
       });
     }
     // One save attempt for an open form; the form keeps its request_id, so a retry never writes twice.
