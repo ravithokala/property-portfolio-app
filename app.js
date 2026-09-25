@@ -42,8 +42,34 @@
     }
   };
   if(!api)delete adapter.signOut;
+  // A home-screen app is resumed, not reloaded, so it could keep showing an old version. When the
+  // app comes back into view or ↻ is tapped, a newer published version.js reloads the page. The URL
+  // names the version being loaded (no device storage), so a stale copy cannot reload in a loop.
+  let checkedAt=0;
+  async function checkForUpdate(force) {
+    const running=root.PortfolioVersion,doc=root.document;
+    if(typeof running!=='string'||running==='development'||typeof root.fetch!=='function')return false;
+    if(!force&&Date.now()-checkedAt<60000)return false;
+    checkedAt=Date.now();
+    // Never throw away a half-filled form.
+    if(doc&&typeof doc.querySelector==='function'&&doc.querySelector('main form'))return false;
+    let latest=null;
+    try{const response=await root.fetch('version.js',{cache:'no-store',credentials:'omit'});
+      const match=/PortfolioVersion='([^'\n]{1,80})'/.exec(await response.text());latest=match&&match[1];}catch(_){return false;}
+    if(!latest||latest===running)return false;
+    const marker='?v='+encodeURIComponent(latest);
+    if(root.location.search===marker)return false;
+    try{const registration=await root.navigator.serviceWorker.getRegistration();if(registration)await registration.update();}catch(_){/* reload anyway */}
+    root.location.replace(root.location.pathname+marker+root.location.hash);
+    return true;
+  }
+  adapter.checkForUpdate=checkForUpdate;
   root.addEventListener('DOMContentLoaded',()=>{
     root.PortfolioUi.mount(root.document,adapter);
+    const doc=root.document;
+    if(doc&&typeof doc.addEventListener==='function')doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')checkForUpdate(false);});
+    const refresh=doc&&typeof doc.getElementById==='function'?doc.getElementById('refresh'):null;
+    if(refresh)refresh.addEventListener('click',()=>checkForUpdate(true));
     if('serviceWorker' in root.navigator)root.navigator.serviceWorker.register('sw.js').catch(()=>{/* the app works without it */});
   });
 })(globalThis);
