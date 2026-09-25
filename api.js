@@ -54,7 +54,7 @@
       },
       // PWA.4/PWA.5B writes. payload carries request_id (one per form submission), so a retry never writes twice.
       async write(action,payload) {
-        if(!['company_compliance.create','company_compliance.update','maintenance.create','maintenance.update','property.update','mortgage.update','tenancy.update','compliance.update','compliance.renew'].includes(action))return failure('BAD_REQUEST');
+        if(!['company_compliance.create','company_compliance.update','maintenance.create','maintenance.update','property.update','mortgage.update','tenancy.update','compliance.update','compliance.renew','mortgage.remortgage','tenancy.end','tenancy.new'].includes(action))return failure('BAD_REQUEST');
         const session=read();
         if(!session)return failure('UNAUTHENTICATED');
         let result;

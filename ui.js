@@ -44,6 +44,15 @@
   const rentFields=[['monthly_rent','Rent per month (£)','money'],['current_rent_effective_date','New rent takes effect','date'],
     ['last_rent_increase_date','Last rent increase','date'],['next_rent_review_date','Next rent review','date']];
   const renewalFields=[['renewal_status','Renewal status','select']];
+  // PWA.8C/8D forms: exactly the server's fields (pwaRemortgageFields_, pwaNewTenancyFields_).
+  const remortgageFields=[['switch_type','Change','select'],['lender','Lender','text'],['start_date','Start date','date'],
+    ['monthly_payment','Monthly payment (£)','money'],['mortgage_type','Mortgage type','select'],['rate_type','Rate type','select'],
+    ['interest_rate','Interest rate (%)','rate'],['fixed_until','Fixed until','date'],['end_date','Mortgage end date','date'],
+    ['original_balance','Amount borrowed (£)','money'],['product_fee','Product fee (£)','money']];
+  const newTenancyFields=[['start_date','Start date','date'],['monthly_rent','Rent per month (£)','money'],['next_rent_review_date','Next rent review','date'],
+    ['rent_due_day','Rent due day (1–31)','number'],['managed_by','Managed by','select'],['agent','Agent','text'],['deposit_amount','Deposit (£)','money'],
+    ['deposit_scheme','Deposit scheme','text'],['deposit_reference','Deposit reference','text'],['deposit_protected_date','Deposit protected','date'],
+    ['right_to_rent_status','Right to rent','select'],['right_to_rent_check_date','Right to rent checked','date']];
   // PWA.8B Renew: the boxes each certificate type uses (every renewal field is still sent; unused ones blank).
   const renewAll=['certificate_reference','co_alarms_checked','cost','effective_date','energy_rating','energy_score','expiry_date',
     'inspection_date','potential_energy_rating','potential_energy_score','provider','smoke_alarms_checked','verified'];
@@ -220,7 +229,7 @@
           ['Rate',known(m.interest_rate)?percent(m.interest_rate)+(m.rate_type?' · '+words(m.rate_type):''):'Not available'],['Fixed until',when(m.fixed_until)],
           ['Current balance',gbp(m.current_balance)],['Balance date',when(m.balance_date)],['Payment per month',gbp(m.monthly_payment)],
           ['Original balance',gbp(m.original_balance)],['Start',when(m.start_date)],['End',when(m.end_date)],['Product fee',gbp(m.product_fee)]]).className='metrics compact';
-        const row=add(mortgage.el,'div',undefined,'actions start');quickButton(row,'Update mortgage','mortgage');
+        const row=add(mortgage.el,'div',undefined,'actions start');quickButton(row,'Update mortgage','mortgage');quickButton(row,'Remortgage','remortgage');
       } else empty(mortgage.el,'No current mortgage.');
       if(details.previous_mortgages&&details.previous_mortgages.length){const ul=list(mortgage.el);
         for(const r of details.previous_mortgages)add(ul,'li','Earlier: '+r.mortgage_id+(r.lender?' · '+r.lender:'')+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – '),'subtext');}
@@ -235,7 +244,9 @@
           ['Deposit reference',recorded(t.deposit_reference)],['Right to rent',t.right_to_rent_status?words(t.right_to_rent_status):'Not recorded'],
           ['Right to rent checked',when(t.right_to_rent_check_date)]]).className='metrics compact';
         const row=add(tenancy.el,'div',undefined,'actions start');quickButton(row,'Update rent','rent');
-      } else empty(tenancy.el,'No current tenancy.');
+        if(['current','pending'].includes(t.status))quickButton(row,'End tenancy','end-tenancy');
+        quickButton(row,'New tenancy','new-tenancy');
+      } else {empty(tenancy.el,'No current tenancy.');const row=add(tenancy.el,'div',undefined,'actions start');quickButton(row,'New tenancy','new-tenancy');}
       if(details.previous_tenancies&&details.previous_tenancies.length){const ul=list(tenancy.el);
         for(const r of details.previous_tenancies)add(ul,'li','Earlier: '+r.tenancy_id+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – '),'subtext');}
       // This property's compliance and maintenance, linking to the full lists filtered to it.
@@ -631,6 +642,16 @@
         rent:()=>{const t=item.details.tenancy;return {title:'Update rent',subtitle:item.property_id+' · '+t.tenancy_id,fields:rentFields,action:'tenancy.update',idField:'tenancy_id',
           record:{id:t.tenancy_id,version:t.version},values:{monthly_rent:str(t.monthly_rent),current_rent_effective_date:str(t.current_rent_effective_date),
             last_rent_increase_date:str(t.last_rent_increase_date),next_rent_review_date:str(t.next_rent_review_date)}};},
+        remortgage:()=>{const m=item.details.mortgage;return {title:'Remortgage',subtitle:item.property_id+' · replaces '+[m.lender,m.mortgage_id].filter(Boolean).join(' · '),
+          fields:remortgageFields,choices:response.data.portfolio.choices,action:'mortgage.remortgage',idField:'mortgage_id',record:{id:m.mortgage_id,version:m.version},
+          values:{switch_type:'same-lender',lender:str(m.lender),start_date:today,monthly_payment:'',mortgage_type:str(m.mortgage_type),rate_type:str(m.rate_type),
+            interest_rate:'',fixed_until:'',end_date:str(m.end_date),original_balance:'',product_fee:''}};},
+        'end-tenancy':()=>{const t=item.details.tenancy;return {title:'End tenancy',subtitle:item.property_id+' · '+t.tenancy_id,fields:[['end_date','End date','date']],
+          action:'tenancy.end',idField:'tenancy_id',record:{id:t.tenancy_id,version:t.version},values:{end_date:today}};},
+        'new-tenancy':()=>{const t=item.details.tenancy;return {title:'New tenancy',subtitle:item.property_id+(t?' · replaces '+t.tenancy_id:''),
+          fields:newTenancyFields,choices:response.data.portfolio.choices,action:'tenancy.new',idField:'property_id',record:{id:item.property_id,version:item.version},
+          values:{start_date:today,monthly_rent:t?str(t.monthly_rent):'',next_rent_review_date:'',rent_due_day:t?str(t.rent_due_day):'',managed_by:t?str(t.managed_by):'',
+            agent:t?str(t.agent):'',deposit_amount:'',deposit_scheme:'',deposit_reference:'',deposit_protected_date:'',right_to_rent_status:'',right_to_rent_check_date:''}};},
         renew:id=>{const r=[...complianceData.groups.due,...complianceData.groups.current].find(x=>x.compliance_id===id);
           const values=Object.fromEntries(renewAll.map(f=>[f,'']));
           Object.assign(values,{provider:str(r.provider),potential_energy_rating:str(r.potential_energy_rating),potential_energy_score:str(r.potential_energy_score)});
