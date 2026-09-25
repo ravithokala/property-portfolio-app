@@ -19,3 +19,4 @@
 .skeleton-block{background:#e8edeb;min-height:52px}.skeleton.title{width:45%;height:20px;margin-top:0}
 .loading-text{margin:12px 0 0;font-size:.85rem}
 .timing{display:block;margin-top:4px;font-variant-numeric:tabular-nums}.timing:empty{display:none}
+.property-details{margin-top:10px}.property-details h3{margin:12px 0 6px;font-size:.9rem}.metrics.compact{gap:10px 12px}.metrics.compact dd{font-size:.95rem;letter-spacing:0}

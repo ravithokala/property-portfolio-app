@@ -2,7 +2,7 @@
    persistence, finance or deadline rules: it draws what the server's canonical projections return. */
 (function (root) {
   'use strict';
-  const pages=['home','attention','properties','finance','more','company','maintenance'];
+  const pages=['home','attention','properties','finance','more','company','maintenance','compliance'];
   const labels={overdue:'Overdue',urgent:'Urgent',warning:'Warning',neutral:'Information'};
   // Plain-language messages for the codes a person can act on; everything else is generic.
   const problems={
@@ -17,11 +17,16 @@
   const gbp=value=>known(value)?new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(value):'Not available';
   const percent=value=>known(value)?new Intl.NumberFormat('en-GB',{maximumFractionDigits:2}).format(value)+'%':'Not available';
   // Which server answer each screen draws; More only needs permissions from any answer.
-  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:null,company:'company_compliance',maintenance:'maintenance'};
-  const words=value=>typeof value==='string'&&value?value.charAt(0).toUpperCase()+value.slice(1).replace(/-/g,' '):'Not recorded';
+  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:null,company:'company_compliance',maintenance:'maintenance',compliance:'compliance'};
+  // Acronyms stay upper case (EPC, EICR, CO); other values read as words.
+  const acronyms={epc:'EPC',eicr:'EICR',co:'CO'};
+  const words=value=>typeof value==='string'&&value?(acronyms[value]||value.charAt(0).toUpperCase()+value.slice(1).replace(/-/g,' ')):'Not recorded';
   // Company compliance form fields, in display order (dates as YYYY-MM-DD text).
   // Days from the server's canonical assessment only; the browser never works out deadlines.
   const dayText=days=>typeof days!=='number'?'':days<0?(-days)+(days===-1?' day':' days')+' overdue':days===0?'today':'in '+days+(days===1?' day':' days');
+  // Expiry wording from the server's day count.
+  const expiryText=days=>typeof days!=='number'?'':days<0?'expired '+(-days)+(days===-1?' day':' days')+' ago':days===0?'expires today':'in '+days+(days===1?' day':' days');
+  const yesNo=value=>value===true?'Yes':value===false?'No':'Not recorded';
   // Cost is stored as text or a number; show money only when it is a plain amount.
   const costText=value=>/^\d+(\.\d{1,2})?$/.test(value)?gbp(Number(value)):value;
   // Maintenance form fields: exactly the server's editable fields (pwaMaintenanceFields_), in display order.
@@ -61,7 +66,7 @@
     return ['Updated '+updatedAt(response.observed_at),s(t.total_ms),
       typeof t.server_ms==='number'?'server '+s(t.server_ms)+(typeof t.sheets_ms==='number'?' (sheets '+s(t.sheets_ms)+')':''):''].filter(Boolean).join(' · ');
   }
-  const titles={home:'Home',attention:'Attention',properties:'Properties',finance:'Finance',more:'More',company:'Company compliance',maintenance:'Maintenance'};
+  const titles={home:'Home',attention:'Attention',properties:'Properties',finance:'Finance',more:'More',company:'Company compliance',maintenance:'Maintenance',compliance:'Compliance'};
   const code=response=>response&&response.error&&typeof response.error.code==='string'?response.error.code:null;
   // options: {canSignOut, version}. page 'attention' expects the full Attention response.
   function render(doc,main,response,page='home',loading=false,options={}) {
@@ -109,6 +114,15 @@
       return;
     }
     const recorded=value=>typeof value==='string'&&value?value:'Not recorded';
+    // One property filter shared by the list screens; the choice lives in memory only.
+    const propertyFilter=(parent,properties,filter)=>{
+      if(properties.length<2)return;
+      const wrap=add(parent,'label',undefined,'field filter');add(wrap,'span','Property');
+      const select=add(wrap,'select');select.setAttribute('data-property-filter','true');
+      for(const id of ['',...properties]){const o=add(select,'option',id||'All properties');o.value=id;if(id===filter)o.selected=true;}
+      select.value=filter;
+    };
+    const when=value=>value?date(value):'Not recorded';
     const metricList=(parent,entries)=>{const dl=add(parent,'dl',undefined,'metrics');for(const [label,value] of entries){const m=add(dl,'div');add(m,'dt',label);add(m,'dd',value);}return dl;};
     const levelBadge=(parent,attention)=>attention.count?badge(parent,attention.level):add(parent,'span','Nothing to review','badge neutral');
     if(page==='properties'){
@@ -126,6 +140,34 @@
           ['Interest rate',known(item.mortgage.interest_rate)?percent(item.mortgage.interest_rate)+(item.mortgage.rate_type?' · '+words(item.mortgage.rate_type):''):'Not available'],
           ['LTV',percent(item.finance.ltv)]]);
         add(box.el,'p','To review: '+item.attention.compliance.count+' compliance · '+item.attention.maintenance.count+' maintenance','note');
+        const details=item.details;
+        if(details){
+          const more=add(box.el,'details','','property-details');add(more,'summary','Tenancy and mortgage');
+          const alertLine=(parent,alertValue,label)=>{if(alertValue){const line=add(parent,'div',undefined,'item-top');badge(line,alertValue.level);add(line,'span',label+' '+dayText(alertValue.days),'item-scope');}};
+          const t=details.tenancy;
+          add(more,'h3','Tenancy'+(t?' · '+t.tenancy_id:''));
+          if(t){
+            if(t.rent_review)alertLine(more,t.rent_review,'Rent review');
+            metricList(more,[['Status',words(t.status)],['Start',when(t.start_date)],['End',when(t.end_date)],['Rent per month',gbp(t.monthly_rent)],
+              ['Rent due day',known(t.rent_due_day)?String(t.rent_due_day):'Not recorded'],['Next rent review',when(t.next_rent_review_date)],
+              ['Last rent increase',when(t.last_rent_increase_date)],['Managed by',t.managed_by?words(t.managed_by):'Not recorded'],
+              ['Deposit',gbp(t.deposit_amount)],['Deposit scheme',recorded(t.deposit_scheme)],['Deposit protected',when(t.deposit_protected_date)],
+              ['Deposit reference',recorded(t.deposit_reference)],['Right to rent',t.right_to_rent_status?words(t.right_to_rent_status):'Not recorded'],
+              ['Right to rent checked',when(t.right_to_rent_check_date)]]).className='metrics compact';
+          } else empty(more,'No current tenancy.');
+          const m=details.mortgage;
+          add(more,'h3','Mortgage'+(m?' · '+m.mortgage_id:''));
+          if(m){
+            if(m.fixed_until_alert)alertLine(more,m.fixed_until_alert,'Fixed rate ends');
+            metricList(more,[['Lender',recorded(m.lender)],['Type',m.mortgage_type?words(m.mortgage_type):'Not recorded'],
+              ['Rate',known(m.interest_rate)?percent(m.interest_rate)+(m.rate_type?' · '+words(m.rate_type):''):'Not available'],['Fixed until',when(m.fixed_until)],
+              ['Start',when(m.start_date)],['End',when(m.end_date)],['Original balance',gbp(m.original_balance)],['Current balance',gbp(m.current_balance)],
+              ['Balance date',when(m.balance_date)],['Payment per month',gbp(m.monthly_payment)],['Product fee',gbp(m.product_fee)]]).className='metrics compact';
+          } else empty(more,'No current mortgage.');
+          const earlier=[...details.previous_tenancies.map(r=>'Tenancy '+r.tenancy_id+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – ')),
+            ...details.previous_mortgages.map(r=>'Mortgage '+r.mortgage_id+(r.lender?' · '+r.lender:'')+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – '))];
+          if(earlier.length){add(more,'h3','Earlier');const ul=list(more);for(const line of earlier)add(ul,'li',line,'subtext');}
+        }
       }
       return;
     }
@@ -225,12 +267,7 @@
       }
       heading('Maintenance');
       const toolbar=add(main,'div',undefined,'toolbar');
-      if(d.properties.length>1){
-        const wrap=add(toolbar,'label',undefined,'field filter');add(wrap,'span','Property');
-        const select=add(wrap,'select');select.setAttribute('data-mnt-filter','true');
-        for(const id of ['',...d.properties]){const o=add(select,'option',id||'All properties');o.value=id;if(id===filter)o.selected=true;}
-        select.value=filter;
-      }
+      propertyFilter(toolbar,d.properties,filter);
       if(canWrite)button(toolbar,'Add job','data-mnt-add').setAttribute('data-mutation','maintenance-create');
       const pick=records=>filter?records.filter(r=>r.property_id===filter):records;
       const item=(parent,r)=>{
@@ -273,10 +310,44 @@
       section('closed','Closed',pick(d.groups.closed),true);
       return;
     }
+    if(page==='compliance'){
+      const d=response.data,filter=d.properties.includes(options.propertyFilter)?options.propertyFilter:'';
+      heading('Compliance');
+      const toolbar=add(main,'div',undefined,'toolbar');propertyFilter(toolbar,d.properties,filter);
+      const pick=records=>filter?records.filter(r=>r.property_id===filter):records;
+      const item=(parent,r)=>{
+        const row=add(parent,'li'),top=add(row,'div',undefined,'item-top');
+        if(r.level)badge(top,r.level);else add(top,'span',words(r.status),'badge neutral');
+        add(top,'span',[r.property_id,words(r.compliance_type)].join(' · '),'item-scope');
+        add(row,'p',r.expiry_date?'Expiry '+date(r.expiry_date)+(r.group!=='history'&&r.days_to_expiry!==null?' · '+expiryText(r.days_to_expiry):''):'No expiry date recorded','item-action');
+        const facts=[];
+        if(r.renewal_status)facts.push('Renewal '+words(r.renewal_status).toLowerCase());
+        if(r.energy_rating)facts.push('EPC '+r.energy_rating+(r.energy_score?' ('+r.energy_score+')':''));
+        if(r.issue_date||r.inspection_date)facts.push((r.inspection_date?'Inspected ':'Issued ')+date(r.inspection_date||r.issue_date));
+        if(facts.length)add(row,'p',facts.join(' · '),'subtext');
+        const who=[r.provider,r.certificate_reference,r.cost?costText(r.cost):'',r.compliance_id].filter(Boolean);
+        add(row,'p',who.join(' · '),'subtext');
+        const alarms=[r.smoke_alarms_checked===true?'Smoke alarms checked':'',r.co_alarms_checked===true?'CO alarms checked':''].filter(Boolean);
+        if(alarms.length)add(row,'p',alarms.join(' · '),'subtext');
+      };
+      const grid=add(main,'div',undefined,'grid');
+      const section=(name,title,records,closed)=>{
+        const box=card(grid,title);add(box.head,'span',String(records.length),'item-scope');
+        if(!records.length){empty(box.el,name==='due'?'Nothing needs renewing in the next 90 days.':name==='current'?'No other current certificates.':'No earlier certificates.');return;}
+        let parent=box.el;
+        if(closed){parent=add(box.el,'details');add(parent,'summary','Show '+records.length+' earlier');}
+        const ul=list(parent);for(const r of records)item(ul,r);
+      };
+      section('due','Needs renewal',pick(d.groups.due));
+      section('current','Current',pick(d.groups.current));
+      section('history','Earlier',pick(d.groups.history),true);
+      return;
+    }
     if(page==='more'){
       heading('More');
       const box=card(main,'More','placeholder');add(box.el,'span','⌂','symbol').setAttribute('aria-hidden','true');
       const links=add(box.el,'div',undefined,'actions');
+      const compliance=add(links,'a','Compliance · view','button');compliance.href='#compliance';
       const maintenance=add(links,'a',response.permissions.can_write===true?'Maintenance · view and edit':'Maintenance · view','button');maintenance.href='#maintenance';
       const company=add(links,'a',response.permissions.can_write===true?'Company compliance · view and edit':'Company compliance · view','button');company.href='#company';
       const actions=add(box.el,'div',undefined,'actions');
@@ -357,13 +428,13 @@
       if(title)title.textContent=form?(form.kind==='maintenance'?mntTitles[form.mode]:form.mode==='create'?'Add record':'Edit record'):titles[page()]||'Home';
       const refresh=doc.getElementById('refresh');
       if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
-      const tab=['company','maintenance'].includes(page())?'more':page();
+      const tab=['company','maintenance','compliance'].includes(page())?'more':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
       options.form=form;options.propertyFilter=propertyFilter;options.slow=slow;
       render(doc,main,response,page(),loading,options);
       wireCompany(response);
       wireMaintenance(response);
-      const filter=main.querySelector('[data-mnt-filter]');
+      const filter=main.querySelector('[data-property-filter]');
       if(filter)filter.addEventListener('change',()=>{propertyFilter=String(filter.value||'');paint();});
       const retry=main.querySelector('[data-retry]');if(retry)retry.addEventListener('click',reload);
       const out=main.querySelector('[data-signout]');if(out)out.addEventListener('click',signOut);

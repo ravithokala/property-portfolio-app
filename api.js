@@ -39,7 +39,7 @@
         return answer;
       },
       async load(kind) {
-        if(!['all','home','attention','portfolio','company_compliance','maintenance'].includes(kind))return failure('BAD_REQUEST');
+        if(!['all','home','attention','portfolio','company_compliance','maintenance','compliance'].includes(kind))return failure('BAD_REQUEST');
         const session=read();
         if(!session)return failure('UNAUTHENTICATED');
         let result;const started=Date.now();
