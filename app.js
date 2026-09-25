@@ -15,7 +15,8 @@
   // The Google ID token goes straight to the server and is never stored.
   async function onCredential(response) {
     const result=await api.signIn(response&&response.credential);
-    signInProblem=result.ok?null:result.error.code;
+    // A token the server could not verify is shown as a sign-in problem, not a silent retry.
+    signInProblem=result.ok?null:result.error.code==='UNAUTHENTICATED'?'SIGN_IN_FAILED':result.error.code;
     if(afterSignIn)afterSignIn();
   }
   const adapter={

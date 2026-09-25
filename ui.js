@@ -8,6 +8,8 @@
   const problems={
     ACCESS_DENIED:'This Google account does not have access to the portfolio.',
     NOT_CONFIGURED:'This app is not connected to the portfolio yet.',
+    SIGN_IN_FAILED:'Google sign-in could not be verified by the portfolio server. Try again; if it keeps happening, the server setup needs checking.',
+    AUTH_CONFIGURATION_INVALID:'The portfolio server’s sign-in settings are incomplete, so no one can sign in yet.',
     OFFLINE:'The portfolio could not be reached. Check the connection and try again.'
   };
   const known=value=>typeof value==='number'&&Number.isFinite(value);
