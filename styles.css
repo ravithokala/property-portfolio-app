@@ -20,3 +20,4 @@
 .loading-text{margin:12px 0 0;font-size:.85rem}
 .timing{display:block;margin-top:4px;font-variant-numeric:tabular-nums}.timing:empty{display:none}
 .property-details{margin-top:10px}.property-details h3{margin:12px 0 6px;font-size:.9rem}.metrics.compact{gap:10px 12px}.metrics.compact dd{font-size:.95rem;letter-spacing:0}
+.link-card{display:block;position:relative;text-decoration:none;color:inherit;padding-right:34px}.link-card .item-action{margin-top:4px}.chevron{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:1.6rem;color:var(--muted)}.back-link{display:inline-block;margin-top:12px;text-decoration:none}

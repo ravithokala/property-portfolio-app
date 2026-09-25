@@ -2,7 +2,7 @@
    persistence, finance or deadline rules: it draws what the server's canonical projections return. */
 (function (root) {
   'use strict';
-  const pages=['home','attention','properties','finance','more','company','maintenance','compliance'];
+  const pages=['home','attention','properties','finance','more','company','maintenance','compliance','property'];
   const labels={overdue:'Overdue',urgent:'Urgent',warning:'Warning',neutral:'Information'};
   // Plain-language messages for the codes a person can act on; everything else is generic.
   const problems={
@@ -17,7 +17,7 @@
   const gbp=value=>known(value)?new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(value):'Not available';
   const percent=value=>known(value)?new Intl.NumberFormat('en-GB',{maximumFractionDigits:2}).format(value)+'%':'Not available';
   // Which server answer each screen draws; More only needs permissions from any answer.
-  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:null,company:'company_compliance',maintenance:'maintenance',compliance:'compliance'};
+  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:null,company:'company_compliance',maintenance:'maintenance',compliance:'compliance',property:'property'};
   // Acronyms stay upper case (EPC, EICR, CO); other values read as words.
   const acronyms={epc:'EPC',eicr:'EICR',co:'CO'};
   const words=value=>typeof value==='string'&&value?(acronyms[value]||value.charAt(0).toUpperCase()+value.slice(1).replace(/-/g,' ')):'Not recorded';
@@ -37,6 +37,10 @@
     ['cost','Cost (£)','money'],['resolution','Resolution','textarea'],['previous_related_record','Previous related job ID','text']];
   // Quick actions show only what they change; the rest of the record is sent unchanged.
   const mntQuick={complete:['completed_date','cost','resolution'],done:['completed_date','next_due_date','cost']};
+  // PWA.7 quick updates: exactly the server's editable fields (pwaPropertyFields_, pwaMortgageFields_).
+  const valueFields=[['current_value','Current value (£)','money'],['current_value_date','Valuation date','date'],['valuation_source','Source (e.g. Zoopla, surveyor)','text']];
+  const mortgageFields=[['current_balance','Current balance (£)','money'],['balance_date','Balance date','date'],['monthly_payment','Monthly payment (£)','money'],
+    ['interest_rate','Interest rate (%)','rate'],['fixed_until','Fixed until','date']];
   const mntTitles={create:'Add job',update:'Edit job',complete:'Mark completed',done:'Mark done'};
   const ccFields=[['type','Type','select'],['status','Status','select'],['due_date','Due date','date'],['period_start','Period start','date'],
     ['period_end','Period end','date'],['action_date','Action date','date'],['completed_date','Completed date','date'],
@@ -66,7 +70,7 @@
     return ['Updated '+updatedAt(response.observed_at),s(t.total_ms),
       typeof t.server_ms==='number'?'server '+s(t.server_ms)+(typeof t.sheets_ms==='number'?' (sheets '+s(t.sheets_ms)+')':''):''].filter(Boolean).join(' · ');
   }
-  const titles={home:'Home',attention:'Attention',properties:'Properties',finance:'Finance',more:'More',company:'Company compliance',maintenance:'Maintenance',compliance:'Compliance'};
+  const titles={home:'Home',attention:'Attention',properties:'Properties',finance:'Finance',more:'More',company:'Company compliance',maintenance:'Maintenance',compliance:'Compliance',property:'Property'};
   const code=response=>response&&response.error&&typeof response.error.code==='string'?response.error.code:null;
   // options: {canSignOut, version}. page 'attention' expects the full Attention response.
   function render(doc,main,response,page='home',loading=false,options={}) {
@@ -126,49 +130,99 @@
     const metricList=(parent,entries)=>{const dl=add(parent,'dl',undefined,'metrics');for(const [label,value] of entries){const m=add(dl,'div');add(m,'dt',label);add(m,'dd',value);}return dl;};
     const levelBadge=(parent,attention)=>attention.count?badge(parent,attention.level):add(parent,'span','Nothing to review','badge neutral');
     if(page==='properties'){
+      // A compact summary per property; tapping one opens its page.
       const items=response.data.properties;
       heading('Properties');
       const grid=add(main,'div',undefined,'grid');
       if(!items.length)empty(card(grid,'Properties').el,'No properties are recorded.');
       for(const item of items){
-        const box=card(grid,item.property_id);levelBadge(box.head,item.attention.total);
-        add(box.el,'p',recorded(item.address),'subtext');
-        metricList(box.el,[['Status',recorded(item.status)],['Current value',gbp(item.current_value)],
-          ['Tenancy',recorded(item.tenancy.tenancy_id)],['Rent per month',gbp(item.tenancy.monthly_rent)],
-          ['Mortgage',recorded(item.mortgage.mortgage_id)],['Mortgage balance',gbp(item.mortgage.current_balance)],
-          ['Fixed until',item.mortgage.fixed_until?date(item.mortgage.fixed_until):'Not recorded'],
-          ['Interest rate',known(item.mortgage.interest_rate)?percent(item.mortgage.interest_rate)+(item.mortgage.rate_type?' · '+words(item.mortgage.rate_type):''):'Not available'],
-          ['LTV',percent(item.finance.ltv)]]);
-        add(box.el,'p','To review: '+item.attention.compliance.count+' compliance · '+item.attention.maintenance.count+' maintenance','note');
-        const details=item.details;
-        if(details){
-          const more=add(box.el,'details','','property-details');add(more,'summary','Tenancy and mortgage');
-          const alertLine=(parent,alertValue,label)=>{if(alertValue){const line=add(parent,'div',undefined,'item-top');badge(line,alertValue.level);add(line,'span',label+' '+dayText(alertValue.days),'item-scope');}};
-          const t=details.tenancy;
-          add(more,'h3','Tenancy'+(t?' · '+t.tenancy_id:''));
-          if(t){
-            if(t.rent_review)alertLine(more,t.rent_review,'Rent review');
-            metricList(more,[['Status',words(t.status)],['Start',when(t.start_date)],['End',when(t.end_date)],['Rent per month',gbp(t.monthly_rent)],
-              ['Rent due day',known(t.rent_due_day)?String(t.rent_due_day):'Not recorded'],['Next rent review',when(t.next_rent_review_date)],
-              ['Last rent increase',when(t.last_rent_increase_date)],['Managed by',t.managed_by?words(t.managed_by):'Not recorded'],
-              ['Deposit',gbp(t.deposit_amount)],['Deposit scheme',recorded(t.deposit_scheme)],['Deposit protected',when(t.deposit_protected_date)],
-              ['Deposit reference',recorded(t.deposit_reference)],['Right to rent',t.right_to_rent_status?words(t.right_to_rent_status):'Not recorded'],
-              ['Right to rent checked',when(t.right_to_rent_check_date)]]).className='metrics compact';
-          } else empty(more,'No current tenancy.');
-          const m=details.mortgage;
-          add(more,'h3','Mortgage'+(m?' · '+m.mortgage_id:''));
-          if(m){
-            if(m.fixed_until_alert)alertLine(more,m.fixed_until_alert,'Fixed rate ends');
-            metricList(more,[['Lender',recorded(m.lender)],['Type',m.mortgage_type?words(m.mortgage_type):'Not recorded'],
-              ['Rate',known(m.interest_rate)?percent(m.interest_rate)+(m.rate_type?' · '+words(m.rate_type):''):'Not available'],['Fixed until',when(m.fixed_until)],
-              ['Start',when(m.start_date)],['End',when(m.end_date)],['Original balance',gbp(m.original_balance)],['Current balance',gbp(m.current_balance)],
-              ['Balance date',when(m.balance_date)],['Payment per month',gbp(m.monthly_payment)],['Product fee',gbp(m.product_fee)]]).className='metrics compact';
-          } else empty(more,'No current mortgage.');
-          const earlier=[...details.previous_tenancies.map(r=>'Tenancy '+r.tenancy_id+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – ')),
-            ...details.previous_mortgages.map(r=>'Mortgage '+r.mortgage_id+(r.lender?' · '+r.lender:'')+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – '))];
-          if(earlier.length){add(more,'h3','Earlier');const ul=list(more);for(const line of earlier)add(ul,'li',line,'subtext');}
-        }
+        const link=add(grid,'a',undefined,'card link-card');link.href='#property/'+encodeURIComponent(item.property_id);
+        const head=add(link,'div',undefined,'card-head');add(head,'h2',item.property_id);levelBadge(head,item.attention.total);
+        add(link,'p',recorded(item.address),'subtext');
+        add(link,'p',[gbp(item.current_value),'LTV '+percent(item.finance.ltv),'Rent '+gbp(item.tenancy.monthly_rent)+'/m'].join(' · '),'item-action');
+        add(link,'span','›','chevron').setAttribute('aria-hidden','true');
       }
+      return;
+    }
+    if(page==='property'){
+      const d=response.data,item=d.portfolio.properties.find(p=>p.property_id===options.propertyId);
+      const canWrite=response.permissions.can_write===true,form=options.form;
+      if(!item){heading('Property');const box=card(main,'Property not found','placeholder');add(box.el,'p','This property is not in the portfolio.');const back=add(box.el,'a','Back to Properties','button');back.href='#properties';return;}
+      const details=item.details||{},t=details.tenancy,m=details.mortgage;
+      if(form&&canWrite&&(form.kind==='value'||form.kind==='mortgage')){
+        const fields=form.kind==='value'?valueFields:mortgageFields,title=form.kind==='value'?'Update value':'Update mortgage';
+        heading(title);
+        const box=card(main,title);
+        add(box.el,'p',form.kind==='value'?item.property_id+' · '+recorded(item.address):item.property_id+' · '+(m?[m.lender,m.mortgage_id].filter(Boolean).join(' · '):''),'subtext');
+        if(form.issues&&form.issues.length){const alert=add(box.el,'div',undefined,'note');alert.setAttribute('role','alert');
+          add(alert,'p','Please fix:');const ul=add(alert,'ul');for(const issue of form.issues)add(ul,'li',issue);}
+        if(form.message){const note=add(box.el,'p',form.message,'note');note.setAttribute('role','alert');}
+        const f=add(box.el,'form',undefined,'cc-form');f.setAttribute('data-quick-form','true');
+        for(const [name,label,kind] of fields){
+          const wrap=add(f,'label',undefined,'field');add(wrap,'span',label);
+          const control=add(wrap,'input');control.type=kind==='date'?'date':'text';if(kind==='money'||kind==='rate')control.setAttribute('inputmode','decimal');
+          control.name=name;control.setAttribute('name',name);control.value=typeof form.values[name]==='string'?form.values[name]:'';
+        }
+        const actions=add(f,'div',undefined,'actions');
+        const save=add(actions,'button',form.saving?'Saving…':'Save','button');save.type='submit';save.disabled=form.saving===true;save.setAttribute('data-mutation',form.kind+'-update');
+        button(actions,'Cancel','data-quick-cancel');
+        return;
+      }
+      heading(item.property_id);
+      const grid=add(main,'div',undefined,'grid');
+      const alertLine=(parent,alertValue,label)=>{if(alertValue){const line=add(parent,'div',undefined,'item-top');badge(line,alertValue.level);add(line,'span',label+' '+dayText(alertValue.days),'item-scope');}};
+      const editButton=(parent,text,attribute)=>{if(canWrite){const el=button(parent,text,attribute);el.className='button small';el.setAttribute('data-mutation',attribute==='data-edit-value'?'value-update':'mortgage-update');}};
+      // Value and money summary.
+      const value=card(grid,'Value','attention-card');levelBadge(value.head,item.attention.total);
+      add(value.el,'p',recorded(item.address)+(item.status?' · '+words(item.status):''),'subtext');
+      metricList(value.el,[['Current value',gbp(item.current_value)],['Valued',when(item.current_value_date)],['Source',recorded(item.valuation_source)],
+        ['LTV',percent(item.finance.ltv)],['Rent per month',gbp(item.tenancy.monthly_rent)],['Mortgage payment (interest) per month',gbp(item.mortgage.monthly_payment)],
+        ['Cashflow per month',gbp(item.finance.monthly_cashflow_before_operating_expenses)],['Principal repaid',gbp(item.finance.principal_repaid_total)]]).className='metrics compact';
+      {const row=add(value.el,'div',undefined,'actions start');editButton(row,'Update value','data-edit-value');}
+      // Mortgage.
+      const mortgage=card(grid,'Mortgage');if(m)add(mortgage.head,'span',m.mortgage_id,'item-scope');
+      if(m){
+        alertLine(mortgage.el,m.fixed_until_alert,'Fixed rate ends');
+        metricList(mortgage.el,[['Lender',recorded(m.lender)],['Type',m.mortgage_type?words(m.mortgage_type):'Not recorded'],
+          ['Rate',known(m.interest_rate)?percent(m.interest_rate)+(m.rate_type?' · '+words(m.rate_type):''):'Not available'],['Fixed until',when(m.fixed_until)],
+          ['Current balance',gbp(m.current_balance)],['Balance date',when(m.balance_date)],['Payment per month',gbp(m.monthly_payment)],
+          ['Original balance',gbp(m.original_balance)],['Start',when(m.start_date)],['End',when(m.end_date)],['Product fee',gbp(m.product_fee)]]).className='metrics compact';
+        const row=add(mortgage.el,'div',undefined,'actions start');editButton(row,'Update mortgage','data-edit-mortgage');
+      } else empty(mortgage.el,'No current mortgage.');
+      if(details.previous_mortgages&&details.previous_mortgages.length){const ul=list(mortgage.el);
+        for(const r of details.previous_mortgages)add(ul,'li','Earlier: '+r.mortgage_id+(r.lender?' · '+r.lender:'')+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – '),'subtext');}
+      // Tenancy.
+      const tenancy=card(grid,'Tenancy');if(t)add(tenancy.head,'span',t.tenancy_id,'item-scope');
+      if(t){
+        alertLine(tenancy.el,t.rent_review,'Rent review');
+        metricList(tenancy.el,[['Status',words(t.status)],['Rent per month',gbp(t.monthly_rent)],['Start',when(t.start_date)],['End',when(t.end_date)],
+          ['Rent due day',known(t.rent_due_day)?String(t.rent_due_day):'Not recorded'],['Next rent review',when(t.next_rent_review_date)],
+          ['Last rent increase',when(t.last_rent_increase_date)],['Managed by',t.managed_by?words(t.managed_by):'Not recorded'],
+          ['Deposit',gbp(t.deposit_amount)],['Deposit scheme',recorded(t.deposit_scheme)],['Deposit protected',when(t.deposit_protected_date)],
+          ['Deposit reference',recorded(t.deposit_reference)],['Right to rent',t.right_to_rent_status?words(t.right_to_rent_status):'Not recorded'],
+          ['Right to rent checked',when(t.right_to_rent_check_date)]]).className='metrics compact';
+      } else empty(tenancy.el,'No current tenancy.');
+      if(details.previous_tenancies&&details.previous_tenancies.length){const ul=list(tenancy.el);
+        for(const r of details.previous_tenancies)add(ul,'li','Earlier: '+r.tenancy_id+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – '),'subtext');}
+      // This property's compliance and maintenance, linking to the full lists filtered to it.
+      const mine=records=>records.filter(r=>r.property_id===item.property_id);
+      const compliance=card(grid,'Compliance');
+      {const link=add(compliance.head,'a','All');link.href='#compliance';link.setAttribute('data-filter-property',item.property_id);}
+      const certs=[...mine(d.compliance.groups.due),...mine(d.compliance.groups.current)];
+      if(!certs.length)empty(compliance.el,'No current certificates recorded.');
+      {const ul=list(compliance.el);for(const r of certs){const li=add(ul,'li'),top=add(li,'div',undefined,'item-top');
+        if(r.level)badge(top,r.level);else add(top,'span',words(r.status),'badge neutral');add(top,'span',words(r.compliance_type),'item-scope');
+        add(li,'p',r.expiry_date?'Expiry '+date(r.expiry_date)+(r.days_to_expiry!==null?' · '+expiryText(r.days_to_expiry):''):'No expiry date recorded','subtext');}}
+      const repairs=card(grid,'Maintenance');
+      {const link=add(repairs.head,'a','All');link.href='#maintenance';link.setAttribute('data-filter-property',item.property_id);}
+      const jobs=[...mine(d.maintenance.groups.open),...mine(d.maintenance.groups.recurring)];
+      if(!jobs.length)empty(repairs.el,'No open or recurring maintenance.');
+      {const ul=list(repairs.el);for(const r of jobs){const li=add(ul,'li'),top=add(li,'div',undefined,'item-top');
+        if(r.level)badge(top,r.level);else add(top,'span',words(r.status),'badge neutral');add(top,'span',r.category?words(r.category):words(r.maintenance_type),'item-scope');
+        add(li,'p',r.description||'No description','item-action');
+        const due=r.group==='recurring'?(r.next_due_date?'Next due '+date(r.next_due_date):'Next due date missing'):(r.target_date?'Target '+date(r.target_date):'');
+        if(due)add(li,'p',due+(r.days!==null?' · '+dayText(r.days):''),'subtext');}}
+      const back=add(main,'a','Back to Properties','button back-link');back.href='#properties';
       return;
     }
     if(page==='finance'){
@@ -408,13 +462,19 @@
     // One 'all' answer serves every screen (memory only). problem holds a failed answer instead.
     let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null,propertyFilter='',slow=false,slowTimer=null;
     const REFRESH_AFTER_MS=5*60*1000;
-    const page=()=>pages.includes(root.location.hash.slice(1))?root.location.hash.slice(1):'home';
+    // '#property/<property_id>' opens one property's page; other hashes name a screen.
+    const route=()=>{const hash=root.location.hash.slice(1),match=/^property\/(.+)$/.exec(hash);
+      if(match){let id;try{id=decodeURIComponent(match[1]);}catch(_){id='';}return {page:'property',propertyId:id};}
+      return {page:pages.includes(hash)&&hash!=='property'?hash:'home',propertyId:null};};
+    const page=()=>route().page;
     const options={canSignOut:typeof adapter.signOut==='function',version:adapter.version,form:null,propertyFilter:''};
     // Each screen's answer is the matching part of 'all', in the shape its own action returns.
     function current(){
       if(problem)return problem;
       if(!all)return null;
       const kind=dataKinds[page()]||'home';
+      // A property page draws from several parts of the one answer.
+      if(kind==='property')return {...all,warnings:[],data:{portfolio:all.data.portfolio,compliance:all.data.compliance,maintenance:all.data.maintenance}};
       return {...all,warnings:kind==='home'?all.warnings:[],data:all.data[kind]};
     }
     function paint(){
@@ -425,15 +485,19 @@
       doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
       const timing=doc.getElementById('timing');if(timing)timing.textContent=all?timingText(all):'';
       const title=doc.getElementById('screen-title');
-      if(title)title.textContent=form?(form.kind==='maintenance'?mntTitles[form.mode]:form.mode==='create'?'Add record':'Edit record'):titles[page()]||'Home';
+      if(title)title.textContent=form?(form.kind==='maintenance'?mntTitles[form.mode]:form.kind==='value'?'Update value':form.kind==='mortgage'?'Update mortgage':
+        form.mode==='create'?'Add record':'Edit record'):page()==='property'?route().propertyId:titles[page()]||'Home';
       const refresh=doc.getElementById('refresh');
       if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
-      const tab=['company','maintenance','compliance'].includes(page())?'more':page();
+      const tab=['company','maintenance','compliance'].includes(page())?'more':page()==='property'?'properties':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
-      options.form=form;options.propertyFilter=propertyFilter;options.slow=slow;
+      options.form=form;options.propertyFilter=propertyFilter;options.slow=slow;options.propertyId=route().propertyId;
       render(doc,main,response,page(),loading,options);
       wireCompany(response);
       wireMaintenance(response);
+      wireProperty(response);
+      // "All" links on a property page open the full list filtered to that property.
+      for(const link of main.querySelectorAll('[data-filter-property]'))link.addEventListener('click',()=>{propertyFilter=link.getAttribute('data-filter-property');});
       const filter=main.querySelector('[data-property-filter]');
       if(filter)filter.addEventListener('change',()=>{propertyFilter=String(filter.value||'');paint();});
       const retry=main.querySelector('[data-retry]');if(retry)retry.addEventListener('click',reload);
@@ -505,6 +569,33 @@
         const payload={request_id:current.request_id,fields:values};
         if(current.mode!=='create'){payload.maintenance_id=current.record.maintenance_id;payload.expected_version=current.record.version;}
         send(current,current.mode==='create'?'maintenance.create':'maintenance.update',payload);
+      });
+    }
+    // PWA.7: update a property's value or its current mortgage's figures (existing rows only).
+    function wireProperty(response){
+      if(page()!=='property'||!response||!response.ok||typeof adapter.save!=='function')return;
+      const item=response.data.portfolio.properties.find(p=>p.property_id===route().propertyId);if(!item)return;
+      const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      const str=value=>value===null||value===undefined?'':String(value);
+      const open=kind=>{
+        const m=item.details&&item.details.mortgage;
+        const values=kind==='value'?{current_value:str(item.current_value),current_value_date:today,valuation_source:str(item.valuation_source)}:
+          {current_balance:str(m.current_balance),balance_date:today,monthly_payment:str(m.monthly_payment),interest_rate:str(m.interest_rate),fixed_until:str(m.fixed_until)};
+        form={kind,mode:'update',record:kind==='value'?{id:item.property_id,version:item.version}:{id:m.mortgage_id,version:m.version},
+          values,request_id:adapter.newRequestId(),issues:[],message:''};paint();main.focus();root.scrollTo(0,0);
+      };
+      const value=main.querySelector('[data-edit-value]');if(value)value.addEventListener('click',()=>open('value'));
+      const mortgage=main.querySelector('[data-edit-mortgage]');if(mortgage)mortgage.addEventListener('click',()=>open('mortgage'));
+      const cancel=main.querySelector('[data-quick-cancel]');if(cancel)cancel.addEventListener('click',()=>{form=null;paint();});
+      const element=main.querySelector('[data-quick-form]');
+      if(element)element.addEventListener('submit',event=>{
+        event.preventDefault();if(!form||form.saving)return;
+        const current=form,values={...current.values};
+        for(const field of element.querySelectorAll('[name]'))values[field.getAttribute('name')]=String(field.value||'');
+        current.values=values;
+        const payload={request_id:current.request_id,fields:values,expected_version:current.record.version};
+        if(current.kind==='value'){payload.property_id=current.record.id;send(current,'property.update',payload);}
+        else {payload.mortgage_id=current.record.id;send(current,'mortgage.update',payload);}
       });
     }
     // One save attempt for an open form; the form keeps its request_id, so a retry never writes twice.
