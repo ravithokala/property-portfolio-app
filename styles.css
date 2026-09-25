@@ -23,5 +23,5 @@
 .link-card{display:block;position:relative;text-decoration:none;color:inherit;padding-right:34px}.link-card .item-action{margin-top:4px}.chevron{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:1.6rem;color:var(--muted)}.back-link{display:inline-block;margin-top:12px;text-decoration:none}
 /* The page area takes focus after navigation (for screen readers); no visible outline on the whole page. */
 main:focus,main:focus-visible{outline:none}
-/* Highlight cards with a flat accent strip instead of a thick top border that curls at rounded corners. */
-.attention-card{border-top:1px solid var(--line);position:relative;overflow:hidden}.attention-card::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--green)}
+/* Every card looks the same: colour is reserved for severity (counters and badges). */
+.attention-card{border-top:1px solid var(--line)}
