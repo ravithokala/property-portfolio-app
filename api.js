@@ -48,9 +48,9 @@
         if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
         return result;
       },
-      // PWA.4 writes. payload carries request_id (one per form submission), so a retry never writes twice.
+      // PWA.4/PWA.5B writes. payload carries request_id (one per form submission), so a retry never writes twice.
       async write(action,payload) {
-        if(!['company_compliance.create','company_compliance.update'].includes(action))return failure('BAD_REQUEST');
+        if(!['company_compliance.create','company_compliance.update','maintenance.create','maintenance.update'].includes(action))return failure('BAD_REQUEST');
         const session=read();
         if(!session)return failure('UNAUTHENTICATED');
         let result;

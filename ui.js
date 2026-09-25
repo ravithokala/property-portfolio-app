@@ -24,6 +24,15 @@
   const dayText=days=>typeof days!=='number'?'':days<0?(-days)+(days===-1?' day':' days')+' overdue':days===0?'today':'in '+days+(days===1?' day':' days');
   // Cost is stored as text or a number; show money only when it is a plain amount.
   const costText=value=>/^\d+(\.\d{1,2})?$/.test(value)?gbp(Number(value)):value;
+  // Maintenance form fields: exactly the server's editable fields (pwaMaintenanceFields_), in display order.
+  const mntFields=[['property_id','Property','select'],['maintenance_type','Type','select'],['category','Category','select'],
+    ['description','Description','textarea'],['priority','Priority','select'],['status','Status','select'],['reported_date','Reported date','date'],
+    ['reported_by','Reported by','select'],['target_date','Target date','date'],['next_due_date','Next due date','date'],
+    ['completed_date','Completed date','date'],['managed_by','Managed by','select'],['contractor','Contractor','text'],
+    ['cost','Cost (£)','money'],['resolution','Resolution','textarea'],['previous_related_record','Previous related job ID','text']];
+  // Quick actions show only what they change; the rest of the record is sent unchanged.
+  const mntQuick={complete:['completed_date','cost','resolution'],done:['completed_date','next_due_date','cost']};
+  const mntTitles={create:'Add job',update:'Edit job',complete:'Mark completed',done:'Mark done'};
   const ccFields=[['type','Type','select'],['status','Status','select'],['due_date','Due date','date'],['period_start','Period start','date'],
     ['period_end','Period end','date'],['action_date','Action date','date'],['completed_date','Completed date','date'],
     ['reference','Reference','text'],['managed_by','Managed by','text'],['document','Document','text'],['notes','Notes','textarea']];
@@ -167,13 +176,45 @@
     }
     if(page==='maintenance'){
       const d=response.data,filter=d.properties.includes(options.propertyFilter)?options.propertyFilter:'';
+      const canWrite=response.permissions.can_write===true,form=options.form;
+      if(form&&canWrite&&form.kind==='maintenance'){
+        const r=form.record||{},values=form.values||{};
+        heading(mntTitles[form.mode]);
+        const box=card(main,mntTitles[form.mode]);
+        if(form.mode!=='create')add(box.el,'p',[r.property_id,r.description||words(r.category),r.maintenance_id].filter(Boolean).join(' · '),'subtext');
+        if(form.issues&&form.issues.length){const alert=add(box.el,'div',undefined,'note');alert.setAttribute('role','alert');
+          add(alert,'p','Please fix:');const ul=add(alert,'ul');for(const issue of form.issues)add(ul,'li',issue);}
+        if(form.message){const m=add(box.el,'p',form.message,'note');m.setAttribute('role','alert');}
+        const f=add(box.el,'form',undefined,'cc-form');f.setAttribute('data-mnt-form','true');
+        const shown=mntQuick[form.mode]||mntFields.map(x=>x[0]);
+        for(const [name,label,kind] of shown.map(field=>mntFields.find(x=>x[0]===field))){
+          const wrap=add(f,'label',undefined,'field');add(wrap,'span',label);
+          const current=typeof values[name]==='string'?values[name]:'';
+          let control;
+          if(kind==='select'){control=add(wrap,'select');
+            const choices=(name==='property_id'?d.properties:d.choices[name]||[]).slice();
+            // Keep an existing value that is not in the list, so an edit never changes it silently.
+            if(current&&!choices.includes(current))choices.unshift(current);
+            if(!current||['category','reported_by','managed_by'].includes(name))choices.unshift('');
+            for(const choice of choices){const o=add(control,'option',choice?(name==='property_id'?choice:words(choice)):'Not recorded');o.value=choice;if(choice===current)o.selected=true;}}
+          else if(kind==='textarea'){control=add(wrap,'textarea');control.rows=3;}
+          else {control=add(wrap,'input');control.type=kind==='date'?'date':'text';if(kind==='money')control.setAttribute('inputmode','decimal');}
+          control.name=name;control.setAttribute('name',name);control.value=current;
+        }
+        const actions=add(f,'div',undefined,'actions');
+        const save=add(actions,'button',form.saving?'Saving…':'Save','button');save.type='submit';save.disabled=form.saving===true;save.setAttribute('data-mutation','maintenance-'+form.mode);
+        button(actions,'Cancel','data-mnt-cancel');
+        return;
+      }
       heading('Maintenance');
+      const toolbar=add(main,'div',undefined,'toolbar');
       if(d.properties.length>1){
-        const wrap=add(main,'label',undefined,'field filter');add(wrap,'span','Property');
+        const wrap=add(toolbar,'label',undefined,'field filter');add(wrap,'span','Property');
         const select=add(wrap,'select');select.setAttribute('data-mnt-filter','true');
         for(const id of ['',...d.properties]){const o=add(select,'option',id||'All properties');o.value=id;if(id===filter)o.selected=true;}
         select.value=filter;
       }
+      if(canWrite)button(toolbar,'Add job','data-mnt-add').setAttribute('data-mutation','maintenance-create');
       const pick=records=>filter?records.filter(r=>r.property_id===filter):records;
       const item=(parent,r)=>{
         const row=add(parent,'li'),top=add(row,'div',undefined,'item-top');
@@ -194,6 +235,13 @@
         const who=[r.contractor,r.cost?costText(r.cost):'',r.maintenance_id].filter(Boolean);
         add(row,'p',who.join(' · '),'subtext');
         if(r.resolution)add(row,'p','Resolution: '+r.resolution,'subtext');
+        if(canWrite){
+          const actions=add(row,'div',undefined,'actions start');
+          const act=(text,attribute,mode)=>{const el=button(actions,text,attribute);el.setAttribute(attribute,r.maintenance_id);el.setAttribute('data-mutation','maintenance-'+mode);el.className='button small';};
+          if(r.group==='open')act('Mark completed','data-mnt-complete','complete');
+          if(r.group==='recurring')act('Mark done','data-mnt-done','done');
+          act('Edit','data-mnt-edit','update');
+        }
       };
       const grid=add(main,'div',undefined,'grid');
       const section=(name,title,records,closed)=>{
@@ -212,7 +260,7 @@
       heading('More');
       const box=card(main,'More','placeholder');add(box.el,'span','⌂','symbol').setAttribute('aria-hidden','true');
       const links=add(box.el,'div',undefined,'actions');
-      const maintenance=add(links,'a','Maintenance · view','button');maintenance.href='#maintenance';
+      const maintenance=add(links,'a',response.permissions.can_write===true?'Maintenance · view and edit':'Maintenance · view','button');maintenance.href='#maintenance';
       const company=add(links,'a',response.permissions.can_write===true?'Company compliance · view and edit':'Company compliance · view','button');company.href='#company';
       const actions=add(box.el,'div',undefined,'actions');
       if(options.canSignOut)button(actions,'Sign out','data-signout');
@@ -286,7 +334,7 @@
       doc.getElementById('access').textContent=all?(all.permissions.can_write?'Editor':'View only'):(select?'Preview':'Signed out');
       doc.getElementById('freshness').textContent=refreshing||loading?'Updating…':all?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
       const title=doc.getElementById('screen-title');
-      if(title)title.textContent=form?(form.mode==='create'?'Add record':'Edit record'):titles[page()]||'Home';
+      if(title)title.textContent=form?(form.kind==='maintenance'?mntTitles[form.mode]:form.mode==='create'?'Add record':'Edit record'):titles[page()]||'Home';
       const refresh=doc.getElementById('refresh');
       if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
       const tab=['company','maintenance'].includes(page())?'more':page();
@@ -294,6 +342,7 @@
       options.form=form;options.propertyFilter=propertyFilter;
       render(doc,main,response,page(),loading,options);
       wireCompany(response);
+      wireMaintenance(response);
       const filter=main.querySelector('[data-mnt-filter]');
       if(filter)filter.addEventListener('change',()=>{propertyFilter=String(filter.value||'');paint();});
       const retry=main.querySelector('[data-retry]');if(retry)retry.addEventListener('click',reload);
@@ -328,23 +377,58 @@
       if(element)element.addEventListener('submit',async event=>{
         event.preventDefault();if(!form||form.saving)return;
         const values={};for(const field of element.querySelectorAll('[name]'))values[field.getAttribute('name')]=String(field.value||'');
-        const current=form;current.values=values;current.saving=true;current.issues=[];current.message='';paint();
+        const current=form;current.values=values;
         const payload={request_id:current.request_id,fields:values};
         if(current.mode==='update'){payload.company_compliance_id=current.record.company_compliance_id;payload.expected_version=current.record.version;}
-        let result;
-        try{result=await adapter.save('company_compliance.'+current.mode,payload);}catch(_){result={ok:false,error:{code:'OFFLINE'}};}
-        if(form!==current)return;
-        current.saving=false;
-        if(result&&result.ok){form=null;reload();return;}
-        const code=result&&result.error&&result.error.code;
-        if(code==='VALIDATION_FAILED')current.issues=(result.error.issues||[]).filter(x=>typeof x==='string').slice(0,10);
-        else current.message=code==='STALE'?'This record changed since you opened it. Cancel and open it again.':
-          code==='BUSY'?'Another save is in progress. Try again in a moment.':
-          code==='OFFLINE'?'Not saved yet: the portfolio could not be reached. Try again; it will not be saved twice.':
-          code==='WRITE_FORBIDDEN'?'This account can view but not edit.':
-          'Not saved. Reference: '+(typeof code==='string'&&/^[A-Z_]{1,40}$/.test(code)?code:'UNKNOWN');
-        paint();
+        send(current,'company_compliance.'+current.mode,payload);
       });
+    }
+    // Maintenance add/edit and the two quick actions. The form holds every editable field; a quick
+    // action shows only its own fields and sends the rest of the record unchanged.
+    function wireMaintenance(response){
+      if(page()!=='maintenance'||!response||!response.ok||typeof adapter.save!=='function')return;
+      const records=[...response.data.groups.open,...response.data.groups.recurring,...response.data.groups.closed];
+      const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      const open=(mode,record)=>{
+        const values={};for(const [name] of mntFields)values[name]=record?String(record[name]||''):'';
+        if(mode==='create')Object.assign(values,{property_id:response.data.properties.includes(propertyFilter)?propertyFilter:(response.data.properties[0]||''),
+          maintenance_type:'reactive',priority:'normal',status:'reported',reported_date:today});
+        if(mode==='complete'||mode==='done')values.completed_date=today;
+        if(mode==='done')values.next_due_date='';
+        form={kind:'maintenance',mode,record,values,request_id:adapter.newRequestId(),issues:[],message:''};paint();main.focus();root.scrollTo(0,0);
+      };
+      const addButton=main.querySelector('[data-mnt-add]');if(addButton)addButton.addEventListener('click',()=>open('create',null));
+      for(const [attribute,mode] of [['data-mnt-edit','update'],['data-mnt-complete','complete'],['data-mnt-done','done']])
+        for(const el of main.querySelectorAll('['+attribute+']'))el.addEventListener('click',()=>open(mode,records.find(r=>r.maintenance_id===el.getAttribute(attribute))));
+      const cancel=main.querySelector('[data-mnt-cancel]');if(cancel)cancel.addEventListener('click',()=>{form=null;paint();});
+      const element=main.querySelector('[data-mnt-form]');
+      if(element)element.addEventListener('submit',event=>{
+        event.preventDefault();if(!form||form.saving)return;
+        const current=form,values={...current.values};
+        for(const field of element.querySelectorAll('[name]'))values[field.getAttribute('name')]=String(field.value||'');
+        if(current.mode==='complete')values.status='completed';
+        current.values=values;
+        const payload={request_id:current.request_id,fields:values};
+        if(current.mode!=='create'){payload.maintenance_id=current.record.maintenance_id;payload.expected_version=current.record.version;}
+        send(current,current.mode==='create'?'maintenance.create':'maintenance.update',payload);
+      });
+    }
+    // One save attempt for an open form; the form keeps its request_id, so a retry never writes twice.
+    async function send(current,action,payload){
+      current.saving=true;current.issues=[];current.message='';paint();
+      let result;
+      try{result=await adapter.save(action,payload);}catch(_){result={ok:false,error:{code:'OFFLINE'}};}
+      if(form!==current)return;
+      current.saving=false;
+      if(result&&result.ok){form=null;reload();return;}
+      const code=result&&result.error&&result.error.code;
+      if(code==='VALIDATION_FAILED')current.issues=(result.error.issues||[]).filter(x=>typeof x==='string').slice(0,10);
+      else current.message=code==='STALE'?'This record changed since you opened it. Cancel and open it again.':
+        code==='BUSY'?'Another save is in progress. Try again in a moment.':
+        code==='OFFLINE'?'Not saved yet: the portfolio could not be reached. Try again; it will not be saved twice.':
+        code==='WRITE_FORBIDDEN'?'This account can view but not edit.':
+        'Not saved. Reference: '+(typeof code==='string'&&/^[A-Z_]{1,40}$/.test(code)?code:'UNKNOWN');
+      paint();
     }
     function reload(){return load();}
     function reset(){all=null;problem=null;return load();}
@@ -362,5 +446,5 @@
     });
     load();
   }
-  root.PortfolioUi={gbp,gbpShort,percent,date,observed,updatedAt,render,mount,pages};
+  root.PortfolioUi={gbp,gbpShort,percent,date,observed,updatedAt,render,mount,pages,maintenanceFields:mntFields.map(x=>x[0])};
 })(globalThis);
