@@ -26,7 +26,10 @@
         let result;
         try{result=await post({action:'auth.start',id_token:idToken});}catch(_){return failure('OFFLINE');}
         if(result.ok&&result.data&&/^[0-9a-f]{64}$/.test(result.data.session)){save(result.data.session);return {ok:true};}
-        return failure(result.error&&typeof result.error.code==='string'?result.error.code:'UNAUTHENTICATED');
+        const answer=failure(result.error&&typeof result.error.code==='string'?result.error.code:'UNAUTHENTICATED');
+        // A short server check name (e.g. "audience"), kept only to show as a reference.
+        if(result.error&&/^[a-z-]{1,40}$/.test(result.error.reason||''))answer.error.reason=result.error.reason;
+        return answer;
       },
       async load(kind) {
         if(kind!=='home'&&kind!=='attention')return failure('BAD_REQUEST');

@@ -16,7 +16,7 @@
   async function onCredential(response) {
     const result=await api.signIn(response&&response.credential);
     // A token the server could not verify is shown as a sign-in problem, not a silent retry.
-    signInProblem=result.ok?null:result.error.code==='UNAUTHENTICATED'?'SIGN_IN_FAILED':result.error.code;
+    signInProblem=result.ok?null:{code:result.error.code==='UNAUTHENTICATED'?'SIGN_IN_FAILED':result.error.code,reason:result.error.reason};
     if(afterSignIn)afterSignIn();
   }
   const adapter={
@@ -24,7 +24,7 @@
     async load(kind) {
       if(!api)return {ok:false,schema_version:1,error:{code:'NOT_CONFIGURED'}};
       // Show a refused sign-in once (e.g. an account that is not allowlisted), then offer sign-in again.
-      if(signInProblem){const code=signInProblem;signInProblem=null;return {ok:false,schema_version:1,error:{code}};}
+      if(signInProblem){const error=signInProblem;signInProblem=null;return {ok:false,schema_version:1,error};}
       return api.load(kind);
     },
     signOut:async()=>{if(api)await api.signOut();const id=gis();if(id)id.disableAutoSelect();},
