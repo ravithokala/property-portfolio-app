@@ -15,3 +15,6 @@
 .filter{margin:10px 0;display:flex;align-items:center;gap:10px}.filter select{flex:1;max-width:260px;min-height:40px;padding:6px 10px}details>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--green);font-weight:600;font-size:.9rem}details[open]>summary{margin-bottom:6px}
 .actions.start{justify-content:flex-start;margin:8px 0 2px}.button.small{min-height:36px;padding:6px 12px;font-size:.85rem}
 .toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0}.toolbar .filter{margin:0;flex:1}.toolbar .button{white-space:nowrap}
+.access{white-space:nowrap}.access:empty{display:none}#freshness{white-space:nowrap}
+.skeleton-block{background:#e8edeb;min-height:52px}.skeleton.title{width:45%;height:20px;margin-top:0}
+.loading-text{margin:12px 0 0;font-size:.85rem}

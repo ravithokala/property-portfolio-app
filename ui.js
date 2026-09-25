@@ -68,9 +68,15 @@
     const list=parent=>add(parent,'ul',undefined,'list');
     const button=(parent,text,attribute)=>{const el=add(parent,'button',text,'button');el.type='button';el.setAttribute(attribute,'true');return el;};
     if(loading){
-      heading('Getting your overview');
-      const box=card(main,'Loading portfolio');const status=add(box.el,'p','Loading…','loading-text');status.setAttribute('role','status');
-      for(let i=0;i<4;i++)add(box.el,'div',undefined,'skeleton'+(i%2?' short':'')).setAttribute('aria-hidden','true');
+      // A quiet outline of the page (counters, then cards) while the first answer arrives.
+      heading('Loading your portfolio');
+      add(main,'p',options.slow?'Still loading: the portfolio server can take a little longer when it has been idle.':'Loading your portfolio…',
+        options.slow?'loading-text':'sr-only').setAttribute('role','status');
+      const counters=add(main,'div',undefined,'counters');counters.setAttribute('aria-hidden','true');
+      for(let i=0;i<4;i++)add(counters,'div',undefined,'counter skeleton-block');
+      const grid=add(main,'div',undefined,'grid');grid.setAttribute('aria-hidden','true');
+      for(let c=0;c<2;c++){const box=add(grid,'div',undefined,'card');add(box,'div',undefined,'skeleton title');
+        for(let i=0;i<3;i++)add(box,'div',undefined,'skeleton'+(i%2?' short':''));}
       return;
     }
     if(code(response)==='UNAUTHENTICATED'){
@@ -318,7 +324,7 @@
   function mount(doc,adapter) {
     const main=doc.getElementById('main'),select=doc.getElementById('scenario');
     // One 'all' answer serves every screen (memory only). problem holds a failed answer instead.
-    let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null,propertyFilter='';
+    let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null,propertyFilter='',slow=false,slowTimer=null;
     const REFRESH_AFTER_MS=5*60*1000;
     const page=()=>pages.includes(root.location.hash.slice(1))?root.location.hash.slice(1):'home';
     const options={canSignOut:typeof adapter.signOut==='function',version:adapter.version,form:null,propertyFilter:''};
@@ -331,15 +337,17 @@
     }
     function paint(){
       const response=current();
-      doc.getElementById('access').textContent=all?(all.permissions.can_write?'Editor':'View only'):(select?'Preview':'Signed out');
-      doc.getElementById('freshness').textContent=refreshing||loading?'Updating…':all?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
+      // Signed out only once the server says so; nothing while the first answer is on its way.
+      doc.getElementById('access').textContent=all?(all.permissions.can_write?'Editor':'View only'):select?'Preview':
+        code(problem)==='UNAUTHENTICATED'?'Signed out':'';
+      doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
       const title=doc.getElementById('screen-title');
       if(title)title.textContent=form?(form.kind==='maintenance'?mntTitles[form.mode]:form.mode==='create'?'Add record':'Edit record'):titles[page()]||'Home';
       const refresh=doc.getElementById('refresh');
       if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
       const tab=['company','maintenance'].includes(page())?'more':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
-      options.form=form;options.propertyFilter=propertyFilter;
+      options.form=form;options.propertyFilter=propertyFilter;options.slow=slow;
       render(doc,main,response,page(),loading,options);
       wireCompany(response);
       wireMaintenance(response);
@@ -352,12 +360,15 @@
     // With data already shown, a refresh keeps it on screen and only the header says "Updating…".
     async function load(){const now=++generation;
       if(all)refreshing=true;else loading=true;
+      // A first load that takes a while says so (the server can be slow to wake up).
+      slow=false;if(slowTimer)root.clearTimeout(slowTimer);
+      if(!all&&typeof root.setTimeout==='function')slowTimer=root.setTimeout(()=>{if(now===generation&&loading){slow=true;paint();}},8000);
       paint();
       let next;
       try{next=await adapter.load('all',select?select.value:undefined);}
       catch(_){next={ok:false,error:{code:'OFFLINE'}};}
       if(now!==generation)return;
-      loading=false;refreshing=false;loadedAt=Date.now();
+      loading=false;refreshing=false;loadedAt=Date.now();slow=false;if(slowTimer)root.clearTimeout(slowTimer);
       if(next&&next.ok===true){all=next;problem=null;stale=false;}
       // Offline during a refresh keeps the last answer; any other problem (e.g. signed out) clears it.
       else if(all&&next&&next.error&&next.error.code==='OFFLINE')stale=true;
