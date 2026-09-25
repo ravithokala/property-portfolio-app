@@ -39,11 +39,15 @@
         return answer;
       },
       async load(kind) {
-        if(!['all','home','attention','portfolio','company_compliance'].includes(kind))return failure('BAD_REQUEST');
+        if(!['all','home','attention','portfolio','company_compliance','maintenance'].includes(kind))return failure('BAD_REQUEST');
         const session=read();
         if(!session)return failure('UNAUTHENTICATED');
-        let result;
+        let result;const started=Date.now();
         try{result=await post({action:kind,session});}catch(_){return failure('OFFLINE');}
+        // Latency line: the whole round trip, and the server's own time when it reports it.
+        const ms=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0?Math.round(value):null;
+        result.timing={total_ms:Date.now()-started,server_ms:ms(result.server_ms),sheets_ms:ms(result.sheets_ms)};
+        delete result.server_ms;delete result.sheets_ms;
         // An expired, revoked or no-longer-allowed session is dropped from this device.
         if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
         return result;

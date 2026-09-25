@@ -53,6 +53,14 @@
     return day(at)===day(new Date())?new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'}).format(at):
       new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',timeZone:'Europe/London'}).format(at);
   }
+  // "Updated 17:07 · 4.2 s · server 2.1 s (sheets 1.4 s)": where a slow load spends its time.
+  function timingText(response){
+    const t=response&&response.timing;
+    if(!t||typeof t.total_ms!=='number')return '';
+    const s=value=>(value/1000).toFixed(1)+' s';
+    return ['Updated '+updatedAt(response.observed_at),s(t.total_ms),
+      typeof t.server_ms==='number'?'server '+s(t.server_ms)+(typeof t.sheets_ms==='number'?' (sheets '+s(t.sheets_ms)+')':''):''].filter(Boolean).join(' · ');
+  }
   const titles={home:'Home',attention:'Attention',properties:'Properties',finance:'Finance',more:'More',company:'Company compliance',maintenance:'Maintenance'};
   const code=response=>response&&response.error&&typeof response.error.code==='string'?response.error.code:null;
   // options: {canSignOut, version}. page 'attention' expects the full Attention response.
@@ -341,6 +349,7 @@
       doc.getElementById('access').textContent=all?(all.permissions.can_write?'Editor':'View only'):select?'Preview':
         code(problem)==='UNAUTHENTICATED'?'Signed out':'';
       doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
+      const timing=doc.getElementById('timing');if(timing)timing.textContent=all?timingText(all):'';
       const title=doc.getElementById('screen-title');
       if(title)title.textContent=form?(form.kind==='maintenance'?mntTitles[form.mode]:form.mode==='create'?'Add record':'Edit record'):titles[page()]||'Home';
       const refresh=doc.getElementById('refresh');
@@ -457,5 +466,5 @@
     });
     load();
   }
-  root.PortfolioUi={gbp,gbpShort,percent,date,observed,updatedAt,render,mount,pages,maintenanceFields:mntFields.map(x=>x[0])};
+  root.PortfolioUi={gbp,gbpShort,percent,date,observed,updatedAt,timingText,render,mount,pages,maintenanceFields:mntFields.map(x=>x[0])};
 })(globalThis);
