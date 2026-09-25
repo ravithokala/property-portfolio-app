@@ -39,12 +39,22 @@
         return answer;
       },
       async load(kind) {
-        if(!['home','attention','portfolio'].includes(kind))return failure('BAD_REQUEST');
+        if(!['home','attention','portfolio','company_compliance'].includes(kind))return failure('BAD_REQUEST');
         const session=read();
         if(!session)return failure('UNAUTHENTICATED');
         let result;
         try{result=await post({action:kind,session});}catch(_){return failure('OFFLINE');}
         // An expired, revoked or no-longer-allowed session is dropped from this device.
+        if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
+        return result;
+      },
+      // PWA.4 writes. payload carries request_id (one per form submission), so a retry never writes twice.
+      async write(action,payload) {
+        if(!['company_compliance.create','company_compliance.update'].includes(action))return failure('BAD_REQUEST');
+        const session=read();
+        if(!session)return failure('UNAUTHENTICATED');
+        let result;
+        try{result=await post({...payload,action,session});}catch(_){return failure('OFFLINE');}
         if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
         return result;
       },

@@ -27,6 +27,8 @@
       if(signInProblem){const error=signInProblem;signInProblem=null;return {ok:false,schema_version:1,error};}
       return api.load(kind);
     },
+    save:async(action,payload)=>api?api.write(action,payload):{ok:false,schema_version:1,error:{code:'NOT_CONFIGURED'}},
+    newRequestId:()=>root.crypto.randomUUID(),
     signOut:async()=>{if(api)await api.signOut();const id=gis();if(id)id.disableAutoSelect();},
     async renderSignIn(host,done) {
       afterSignIn=done;

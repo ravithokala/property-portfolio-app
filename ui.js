@@ -2,7 +2,7 @@
    persistence, finance or deadline rules: it draws what the server's canonical projections return. */
 (function (root) {
   'use strict';
-  const pages=['home','attention','properties','finance','more'];
+  const pages=['home','attention','properties','finance','more','company'];
   const labels={overdue:'Overdue',urgent:'Urgent',warning:'Warning',neutral:'Information'};
   // Plain-language messages for the codes a person can act on; everything else is generic.
   const problems={
@@ -16,7 +16,12 @@
   const gbp=value=>known(value)?new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(value):'Not available';
   const percent=value=>known(value)?new Intl.NumberFormat('en-GB',{maximumFractionDigits:2}).format(value)+'%':'Not available';
   // Which server answer each screen draws; More only needs permissions from any answer.
-  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:null};
+  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:null,company:'company_compliance'};
+  const words=value=>typeof value==='string'&&value?value.charAt(0).toUpperCase()+value.slice(1).replace(/-/g,' '):'Not recorded';
+  // Company compliance form fields, in display order (dates as YYYY-MM-DD text).
+  const ccFields=[['type','Type','select'],['status','Status','select'],['due_date','Due date','date'],['period_start','Period start','date'],
+    ['period_end','Period end','date'],['action_date','Action date','date'],['completed_date','Completed date','date'],
+    ['reference','Reference','text'],['managed_by','Managed by','text'],['document','Document','text'],['notes','Notes','textarea']];
   function date(value) {
     if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return 'Not recorded';
     const parsed=new Date(value+'T12:00:00.000Z');
@@ -104,13 +109,52 @@
       }
       return;
     }
+    if(page==='company'){
+      const d=response.data,canWrite=response.permissions.can_write===true,form=options.form;
+      if(form&&canWrite){
+        const r=form.record||{},values=form.values||{};
+        heading(form.mode==='create'?'Add record':'Edit '+r.company_compliance_id,'Saved straight to the CompanyCompliance tab of your workbook.');
+        const box=card(main,form.mode==='create'?'New company compliance record':'Company compliance record');
+        if(form.issues&&form.issues.length){const alert=add(box.el,'div',undefined,'note');alert.setAttribute('role','alert');
+          add(alert,'p','Please fix:');const ul=add(alert,'ul');for(const issue of form.issues)add(ul,'li',issue);}
+        if(form.message){const m=add(box.el,'p',form.message,'note');m.setAttribute('role','alert');}
+        const f=add(box.el,'form',undefined,'cc-form');f.setAttribute('data-cc-form','true');
+        for(const [name,label,kind] of ccFields){
+          const wrap=add(f,'label',undefined,'field');add(wrap,'span',label);
+          const current=Object.hasOwn(values,name)?values[name]:(r[name]||(name==='status'&&form.mode==='create'?'pending':''));
+          let control;
+          if(kind==='select'){control=add(wrap,'select');
+            const choices=(d.choices[name]||[]).slice();if(name==='type'&&!current)choices.unshift('');
+            for(const choice of choices){const o=add(control,'option',choice?words(choice):'Choose…');o.value=choice;if(choice===current)o.selected=true;}}
+          else if(kind==='textarea'){control=add(wrap,'textarea');control.rows=3;}
+          else {control=add(wrap,'input');control.type=kind==='date'?'date':'text';}
+          control.name=name;control.setAttribute('name',name);control.value=current;
+        }
+        const actions=add(f,'div',undefined,'actions');
+        const save=add(actions,'button',form.saving?'Saving…':'Save','button');save.type='submit';save.disabled=form.saving===true;save.setAttribute('data-mutation','company-compliance-'+form.mode);
+        button(actions,'Cancel','data-cc-cancel');
+        return;
+      }
+      heading('Company compliance','Filings and other company obligations.');
+      const top=add(main,'div',undefined,'actions');
+      if(canWrite)button(top,'Add record','data-cc-add').setAttribute('data-mutation','company-compliance-create');
+      const back=add(top,'a','Back to More','button');back.href='#more';
+      const grid=add(main,'div',undefined,'grid');
+      if(!d.records.length)empty(card(grid,'Records').el,'No company compliance records yet.');
+      for(const r of d.records){
+        const box=card(grid,words(r.type));add(box.head,'span',words(r.status),'badge neutral');
+        metricList(box.el,[['Record',r.company_compliance_id],['Due',r.due_date?date(r.due_date):'Not recorded'],
+          ['Period',r.period_start||r.period_end?(r.period_start?date(r.period_start):'?')+' – '+(r.period_end?date(r.period_end):'?'):'Not recorded'],
+          ['Completed',r.completed_date?date(r.completed_date):'Not recorded'],['Reference',recorded(r.reference)],['Managed by',recorded(r.managed_by)]]);
+        if(r.notes)add(box.el,'p',r.notes,'note');
+        if(canWrite){const edit=button(box.el,'Edit','data-cc-edit');edit.setAttribute('data-cc-edit',r.company_compliance_id);edit.setAttribute('data-mutation','company-compliance-update');}
+      }
+      return;
+    }
     if(page==='more'){
       heading('More','Account and app details.');
       const box=card(main,'More','placeholder');add(box.el,'span','⌂','symbol').setAttribute('aria-hidden','true');
-      if(response.permissions.can_write===true){
-        const future=add(box.el,'button','Company compliance · Add / edit coming later','button');future.type='button';future.disabled=true;future.setAttribute('data-mutation','future-company-compliance');
-        add(box.el,'p','Editing is not available yet.','subtext');
-      }
+      const company=add(box.el,'a',response.permissions.can_write===true?'Company compliance · view and edit':'Company compliance · view','button');company.href='#company';
       const actions=add(box.el,'div',undefined,'actions');
       if(options.canSignOut)button(actions,'Sign out','data-signout');
       const back=add(actions,'a','Back to Home','button');back.href='#home';
@@ -161,10 +205,10 @@
   // Responses live in memory only; nothing is written to device storage here.
   function mount(doc,adapter) {
     const main=doc.getElementById('main'),select=doc.getElementById('scenario');
-    const responses={};let loading=true,generation=0;
+    const responses={};let loading=true,generation=0,form=null;
     const page=()=>pages.includes(root.location.hash.slice(1))?root.location.hash.slice(1):'home';
-    const options={canSignOut:typeof adapter.signOut==='function',version:adapter.version};
-    const latest=()=>responses.home||responses.attention||responses.portfolio||null;
+    const options={canSignOut:typeof adapter.signOut==='function',version:adapter.version,form:null};
+    const latest=()=>responses.home||responses.attention||responses.portfolio||responses.company_compliance||null;
     // More only needs permissions; every other screen needs its own kind of answer.
     function current(){const kind=dataKinds[page()],any=latest();
       if(!kind)return any;
@@ -173,8 +217,11 @@
       const response=current(),any=latest();
       doc.getElementById('access').textContent=any&&any.ok?(any.permissions.can_write?'Editor':'View only'):(select?'Preview':'Signed out');
       doc.getElementById('freshness').textContent=response&&response.ok?observed(response.observed_at):'No live connection';
-      for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===page())link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
+      const tab=page()==='company'?'more':page();
+      for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
+      options.form=form;
       render(doc,main,response,page(),loading,options);
+      wireCompany(response);
       const retry=main.querySelector('[data-retry]');if(retry)retry.addEventListener('click',reload);
       const out=main.querySelector('[data-signout]');if(out)out.addEventListener('click',signOut);
       const host=main.querySelector('[data-signin]');if(host&&adapter.renderSignIn)adapter.renderSignIn(host,reload);
@@ -188,10 +235,42 @@
       if(!next||next.ok!==true)for(const key of Object.keys(responses))delete responses[key];
       responses[kind]=next;loading=false;paint();
     }
+    // Company compliance add/edit. One request_id per opened form, reused on retry, so an uncertain
+    // save that is sent again never writes twice.
+    function wireCompany(response){
+      if(page()!=='company'||!response||!response.ok||typeof adapter.save!=='function')return;
+      const open=(mode,record)=>{form={mode,record,values:{},request_id:adapter.newRequestId(),issues:[],message:''};paint();main.focus();root.scrollTo(0,0);};
+      const add=main.querySelector('[data-cc-add]');if(add)add.addEventListener('click',()=>open('create',null));
+      for(const edit of main.querySelectorAll('[data-cc-edit]'))edit.addEventListener('click',()=>
+        open('update',response.data.records.find(r=>r.company_compliance_id===edit.getAttribute('data-cc-edit'))));
+      const cancel=main.querySelector('[data-cc-cancel]');if(cancel)cancel.addEventListener('click',()=>{form=null;paint();});
+      const element=main.querySelector('[data-cc-form]');
+      if(element)element.addEventListener('submit',async event=>{
+        event.preventDefault();if(!form||form.saving)return;
+        const values={};for(const field of element.querySelectorAll('[name]'))values[field.getAttribute('name')]=String(field.value||'');
+        const current=form;current.values=values;current.saving=true;current.issues=[];current.message='';paint();
+        const payload={request_id:current.request_id,fields:values};
+        if(current.mode==='update'){payload.company_compliance_id=current.record.company_compliance_id;payload.expected_version=current.record.version;}
+        let result;
+        try{result=await adapter.save('company_compliance.'+current.mode,payload);}catch(_){result={ok:false,error:{code:'OFFLINE'}};}
+        if(form!==current)return;
+        current.saving=false;
+        if(result&&result.ok){form=null;reload();return;}
+        const code=result&&result.error&&result.error.code;
+        if(code==='VALIDATION_FAILED')current.issues=(result.error.issues||[]).filter(x=>typeof x==='string').slice(0,10);
+        else current.message=code==='STALE'?'This record changed since you opened it. Cancel and open it again.':
+          code==='BUSY'?'Another save is in progress. Try again in a moment.':
+          code==='OFFLINE'?'Not saved yet: the portfolio could not be reached. Try again; it will not be saved twice.':
+          code==='WRITE_FORBIDDEN'?'This account can view but not edit.':
+          'Not saved. Reference: '+(typeof code==='string'&&/^[A-Z_]{1,40}$/.test(code)?code:'UNKNOWN');
+        paint();
+      });
+    }
     function reload(){for(const key of Object.keys(responses))delete responses[key];return load();}
     async function signOut(){try{await adapter.signOut();}catch(_){}return reload();}
     if(select)select.addEventListener('change',reload);
     root.addEventListener('hashchange',()=>{
+      form=null;
       const any=latest();
       const kind=dataKinds[page()];
       if(!loading&&kind&&!responses[kind]&&any&&any.ok)load();else paint();
