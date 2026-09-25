@@ -186,6 +186,10 @@
       button(actions,'Cancel','data-quick-cancel');
       return;
     }
+    // PWA.9A: opens a record's document in Google Drive (both users); shown only when a document is recorded.
+    const docButton=(parent,label,tab,id,field,value)=>{if(typeof value!=='string'||!value)return;
+      const el=button(parent,label,'data-open-doc');el.className='button small';
+      el.setAttribute('data-doc-tab',tab);el.setAttribute('data-doc-id',id);el.setAttribute('data-doc-field',field);};
     // A small button that opens a quick edit (PRIMARY only).
     const quickButton=(parent,text,kind,id)=>{if(response.permissions&&response.permissions.can_write===true){
       const el=button(parent,text,'data-quick');el.setAttribute('data-quick',kind);if(id)el.setAttribute('data-quick-id',id);el.className='button small';el.setAttribute('data-mutation',kind+'-update');}};
@@ -243,6 +247,9 @@
           ['Deposit',gbp(t.deposit_amount)],['Deposit scheme',recorded(t.deposit_scheme)],['Deposit protected',when(t.deposit_protected_date)],
           ['Deposit reference',recorded(t.deposit_reference)],['Right to rent',t.right_to_rent_status?words(t.right_to_rent_status):'Not recorded'],
           ['Right to rent checked',when(t.right_to_rent_check_date)]]).className='metrics compact';
+        {const docs=add(tenancy.el,'div',undefined,'actions start');docButton(docs,'Tenancy agreement','Tenancies',t.tenancy_id,'tenancy_document',t.tenancy_document);
+          docButton(docs,'Deposit certificate','Tenancies',t.tenancy_id,'deposit_document',t.deposit_document);
+          docButton(docs,'Right to rent evidence','Tenancies',t.tenancy_id,'right_to_rent_evidence_location',t.right_to_rent_evidence_location);}
         const row=add(tenancy.el,'div',undefined,'actions start');quickButton(row,'Update rent','rent');
         if(['current','pending'].includes(t.status))quickButton(row,'End tenancy','end-tenancy');
         quickButton(row,'New tenancy','new-tenancy');
@@ -259,6 +266,7 @@
         if(r.level)badge(top,r.level);else add(top,'span',words(r.status),'badge neutral');add(top,'span',words(r.compliance_type),'item-scope');
         add(li,'p',r.expiry_date?'Expiry '+date(r.expiry_date)+(r.days_to_expiry!==null?' · '+expiryText(r.days_to_expiry):''):'No expiry date recorded','subtext');
         if(r.renewal_status)add(li,'p','Renewal '+words(r.renewal_status).toLowerCase(),'subtext');
+        {const docs=add(li,'div',undefined,'actions start');docButton(docs,'Open certificate','Compliance',r.compliance_id,'document',r.document);}
         {const row=add(li,'div',undefined,'actions start');if(['current','pending'].includes(r.status))quickButton(row,'Renew','renew',r.compliance_id);
           quickButton(row,'Renewal status','renewal',r.compliance_id);}}}
       const repairs=card(grid,'Maintenance');
@@ -331,6 +339,7 @@
           ['Period',r.period_start||r.period_end?(r.period_start?date(r.period_start):'?')+' – '+(r.period_end?date(r.period_end):'?'):'Not recorded'],
           ['Completed',r.completed_date?date(r.completed_date):'Not recorded'],['Reference',recorded(r.reference)],['Managed by',recorded(r.managed_by)]]);
         if(r.notes)add(box.el,'p',r.notes,'note');
+        {const docs=add(box.el,'div',undefined,'actions start');docButton(docs,'Open document','CompanyCompliance',r.company_compliance_id,'document',r.document);}
         if(canWrite){const edit=button(box.el,'Edit','data-cc-edit');edit.setAttribute('data-cc-edit',r.company_compliance_id);edit.setAttribute('data-mutation','company-compliance-update');}
       }
       return;
@@ -391,6 +400,8 @@
         const who=[r.contractor,r.cost?costText(r.cost):'',r.maintenance_id].filter(Boolean);
         add(row,'p',who.join(' · '),'subtext');
         if(r.resolution)add(row,'p','Resolution: '+r.resolution,'subtext');
+        {const docs=add(row,'div',undefined,'actions start');docButton(docs,'Open invoice','Maintenance',r.maintenance_id,'invoice_document',r.invoice_document);
+          docButton(docs,'Open supporting document','Maintenance',r.maintenance_id,'supporting_document',r.supporting_document);}
         if(canWrite){
           const actions=add(row,'div',undefined,'actions start');
           const act=(text,attribute,mode)=>{const el=button(actions,text,attribute);el.setAttribute(attribute,r.maintenance_id);el.setAttribute('data-mutation','maintenance-'+mode);el.className='button small';};
@@ -431,6 +442,7 @@
         add(row,'p',who.join(' · '),'subtext');
         const alarms=[r.smoke_alarms_checked===true?'Smoke alarms checked':'',r.co_alarms_checked===true?'CO alarms checked':''].filter(Boolean);
         if(alarms.length)add(row,'p',alarms.join(' · '),'subtext');
+        {const docs=add(row,'div',undefined,'actions start');docButton(docs,'Open certificate','Compliance',r.compliance_id,'document',r.document);}
         if(r.group!=='history'){const actions=add(row,'div',undefined,'actions start');
           if(['current','pending'].includes(r.status))quickButton(actions,'Renew','renew',r.compliance_id);
           quickButton(actions,'Renewal status','renewal',r.compliance_id);}
@@ -555,6 +567,7 @@
       if(filter)filter.addEventListener('change',()=>{propertyFilter=String(filter.value||'');paint();});
       const retry=main.querySelector('[data-retry]');if(retry)retry.addEventListener('click',reload);
       const out=main.querySelector('[data-signout]');if(out)out.addEventListener('click',signOut);
+      wireDocuments();
       const everywhere=main.querySelector('[data-signout-all]');if(everywhere)everywhere.addEventListener('click',signOutEverywhere);
       const host=main.querySelector('[data-signin]');if(host&&adapter.renderSignIn)adapter.renderSignIn(host,reload);
     }
@@ -676,6 +689,30 @@
         for(const field of element.querySelectorAll('[name]'))values[field.getAttribute('name')]=field.type==='checkbox'?(field.checked?'true':'false'):String(field.value||'');
         current.values=values;
         send(current,current.action,{request_id:current.request_id,fields:values,expected_version:current.record.version,[current.idField]:current.record.id});
+      });
+    }
+    // PWA.9A: the window opens on the tap itself (so phones do not block it) and is sent to the Drive link
+    // once the server has resolved it; a problem is shown on the button instead.
+    const documentProblems={NO_DOCUMENT:'No document recorded',DOCUMENT_MISSING:'Document not found in Drive',
+      DOCUMENT_AMBIGUOUS:'More than one file matches',DOCUMENT_REFERENCE_UNSUPPORTED:'Document reference needs fixing in the sheet',
+      DOCUMENTS_NOT_CONFIGURED:'Documents folder not set up',OFFLINE:'Could not reach the portfolio'};
+    function wireDocuments(){
+      if(typeof adapter.openDocument!=='function')return;
+      for(const el of main.querySelectorAll('[data-open-doc]'))el.addEventListener('click',async()=>{
+        const label=el.textContent,win=typeof root.open==='function'?root.open('about:blank','_blank'):null;
+        el.disabled=true;el.textContent='Opening…';
+        let result;
+        try{result=await adapter.openDocument(el.getAttribute('data-doc-tab'),el.getAttribute('data-doc-id'),el.getAttribute('data-doc-field'));}
+        catch(_){result={ok:false,error:{code:'OFFLINE'}};}
+        el.disabled=false;
+        if(result&&result.ok&&typeof result.data.url==='string'&&/^https:\/\/(drive|docs)\.google\.com\//.test(result.data.url)){
+          el.textContent=label;
+          if(win){try{win.opener=null;}catch(_){}win.location.href=result.data.url;}else root.location.href=result.data.url;
+          return;
+        }
+        if(win)try{win.close();}catch(_){}
+        const code=result&&result.error&&result.error.code;
+        el.textContent=documentProblems[code]||'Could not open ('+(typeof code==='string'&&/^[A-Z_]{1,40}$/.test(code)?code:'UNKNOWN')+')';
       });
     }
     // One save attempt for an open form; the form keeps its request_id, so a retry never writes twice.

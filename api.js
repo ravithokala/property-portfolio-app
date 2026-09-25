@@ -62,6 +62,15 @@
         if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
         return result;
       },
+      // PWA.9A: a Drive link for a record's document (both users).
+      async openDocument(tab,id,field) {
+        const session=read();
+        if(!session)return failure('UNAUTHENTICATED');
+        let result;
+        try{result=await post({action:'document.open',session,tab,id,field});}catch(_){return failure('OFFLINE');}
+        if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
+        return result;
+      },
       // Ends every session of this account (e.g. a lost phone), then this device's key.
       async signOutEverywhere() {
         const session=read();

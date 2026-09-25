@@ -35,6 +35,7 @@
     save:async(action,payload)=>api?api.write(action,payload):{ok:false,schema_version:1,error:{code:'NOT_CONFIGURED'}},
     newRequestId:()=>root.crypto.randomUUID(),
     signOut:async()=>{if(api)await api.signOut();const id=gis();if(id)id.disableAutoSelect();},
+    openDocument:async(tab,id,field)=>api?api.openDocument(tab,id,field):{ok:false,error:{code:'NOT_CONFIGURED'}},
     signOutEverywhere:async()=>{const result=api?await api.signOutEverywhere():{ok:false,error:{code:'NOT_CONFIGURED'}};const id=gis();if(id&&result.ok)id.disableAutoSelect();return result;},
     async renderSignIn(host,done) {
       afterSignIn=done;
