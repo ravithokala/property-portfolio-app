@@ -1,6 +1,6 @@
 /* Caches the app shell only (ROADMAP PWA-D1). Portfolio data is never cached: requests to
    other origins (the API, Google sign-in) and anything but GET go straight to the network. */
-const VERSION='shell-0459798-be106bf82f4e';
+const VERSION='shell-a7e4b39-dfb5e57a031a';
 const SHELL=['./','index.html','styles.css','config.js','version.js','ui.js','api.js','app.js',
   'manifest.webmanifest','icons/icon.svg','icons/icon-192.png','icons/apple-touch-icon.png'];
 
