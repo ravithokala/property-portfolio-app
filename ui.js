@@ -15,7 +15,8 @@
   const known=value=>typeof value==='number'&&Number.isFinite(value);
   const gbp=value=>known(value)?new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(value):'Not available';
   const percent=value=>known(value)?new Intl.NumberFormat('en-GB',{maximumFractionDigits:2}).format(value)+'%':'Not available';
-  const dataPage=page=>page==='attention'?'attention':'home';
+  // Which server answer each screen draws; More only needs permissions from any answer.
+  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:null};
   function date(value) {
     if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return 'Not recorded';
     const parsed=new Date(value+'T12:00:00.000Z');
@@ -65,19 +66,55 @@
       if(code(response)==='ACCESS_DENIED'&&options.canSignOut)button(actions,'Use another account','data-signout');
       return;
     }
-    if(!['home','attention'].includes(page)){
-      const names={properties:'Properties',finance:'Finance',more:'More'};
-      heading(names[page]||'Home','A focused workspace for your portfolio.');
-      const box=card(main,page==='more'?'More':'Coming in a later slice','placeholder');add(box.el,'span','⌂','symbol').setAttribute('aria-hidden','true');
-      if(page!=='more')add(box.el,'p',(names[page]||'This section')+' will use the same canonical portfolio data.');
-      if(page==='more'&&response.permissions.can_write===true){
+    const recorded=value=>typeof value==='string'&&value?value:'Not recorded';
+    const metricList=(parent,entries)=>{const dl=add(parent,'dl',undefined,'metrics');for(const [label,value] of entries){const m=add(dl,'div');add(m,'dt',label);add(m,'dd',value);}return dl;};
+    const levelBadge=(parent,attention)=>attention.count?badge(parent,attention.level):add(parent,'span','Nothing to review','badge neutral');
+    if(page==='properties'){
+      const items=response.data.properties;
+      heading('Properties','Each property with its current tenancy and mortgage.');
+      const grid=add(main,'div',undefined,'grid');
+      if(!items.length)empty(card(grid,'Properties').el,'No properties are recorded.');
+      for(const item of items){
+        const box=card(grid,item.property_id);levelBadge(box.head,item.attention.total);
+        add(box.el,'p',recorded(item.address),'subtext');
+        metricList(box.el,[['Status',recorded(item.status)],['Current value',gbp(item.current_value)],
+          ['Tenancy',recorded(item.tenancy.tenancy_id)],['Rent per month',gbp(item.tenancy.monthly_rent)],
+          ['Mortgage',recorded(item.mortgage.mortgage_id)],['Mortgage balance',gbp(item.mortgage.current_balance)],
+          ['Fixed until',item.mortgage.fixed_until?date(item.mortgage.fixed_until):'Not recorded'],['LTV',percent(item.finance.ltv)]]);
+        add(box.el,'p','To review: '+item.attention.compliance.count+' compliance · '+item.attention.maintenance.count+' maintenance','note');
+      }
+      return;
+    }
+    if(page==='finance'){
+      const t=response.data.totals;
+      heading('Finance','Contractual figures before operating expenses.');
+      const grid=add(main,'div',undefined,'grid');
+      const total=card(grid,'Portfolio finance','attention-card');
+      metricList(total.el,[['Current property value',gbp(t.total_current_property_value)],['Mortgage exposure',gbp(t.total_current_mortgage_balance)],
+        ['Portfolio LTV',percent(t.portfolio_ltv)],['Rent per month',gbp(t.total_monthly_contractual_rent)],
+        ['Mortgage payments per month',gbp(t.total_monthly_mortgage_cost)],['Cashflow per month',gbp(t.monthly_cashflow_before_operating_expenses)],
+        ['Rent per year',gbp(t.total_annual_contractual_rent)],['Cashflow per year',gbp(t.annual_cashflow_before_operating_expenses)]]);
+      add(total.el,'p','Cashflow is rent minus mortgage payments, before operating expenses — not profit.','note');
+      if(!t.complete)add(total.el,'p','Incomplete finance data. Unknown values are not treated as zero.','note');
+      for(const item of response.data.properties){
+        const box=card(grid,item.property_id);
+        metricList(box.el,[['Rent per month',gbp(item.tenancy.monthly_rent)],['Mortgage payment per month',gbp(item.mortgage.monthly_payment)],
+          ['Cashflow per month',gbp(item.finance.monthly_cashflow_before_operating_expenses)],['LTV',percent(item.finance.ltv)],
+          ['Principal repaid',gbp(item.finance.principal_repaid_total)],['Principal repaid %',percent(item.finance.principal_repaid_pct)]]);
+      }
+      return;
+    }
+    if(page==='more'){
+      heading('More','Account and app details.');
+      const box=card(main,'More','placeholder');add(box.el,'span','⌂','symbol').setAttribute('aria-hidden','true');
+      if(response.permissions.can_write===true){
         const future=add(box.el,'button','Company compliance · Add / edit coming later','button');future.type='button';future.disabled=true;future.setAttribute('data-mutation','future-company-compliance');
         add(box.el,'p','Editing is not available yet.','subtext');
       }
       const actions=add(box.el,'div',undefined,'actions');
-      if(page==='more'&&options.canSignOut)button(actions,'Sign out','data-signout');
+      if(options.canSignOut)button(actions,'Sign out','data-signout');
       const back=add(actions,'a','Back to Home','button');back.href='#home';
-      if(page==='more'&&typeof options.version==='string')add(box.el,'p','Version '+options.version,'version');
+      if(typeof options.version==='string')add(box.el,'p','Version '+options.version,'version');
       return;
     }
     const full=page==='attention',data=response.data,attentionData=full?data:data.attention;
@@ -127,11 +164,11 @@
     const responses={};let loading=true,generation=0;
     const page=()=>pages.includes(root.location.hash.slice(1))?root.location.hash.slice(1):'home';
     const options={canSignOut:typeof adapter.signOut==='function',version:adapter.version};
-    const latest=()=>responses.home||responses.attention||null;
-    // Placeholder screens only need permissions; Home and Attention need their own answer.
-    function current(){const p=page(),any=latest();
-      if(!['home','attention'].includes(p))return any;
-      return responses[p]||(any&&!any.ok?any:null);}
+    const latest=()=>responses.home||responses.attention||responses.portfolio||null;
+    // More only needs permissions; every other screen needs its own kind of answer.
+    function current(){const kind=dataKinds[page()],any=latest();
+      if(!kind)return any;
+      return responses[kind]||(any&&!any.ok?any:null);}
     function paint(){
       const response=current(),any=latest();
       doc.getElementById('access').textContent=any&&any.ok?(any.permissions.can_write?'Editor':'View only'):(select?'Preview':'Signed out');
@@ -142,7 +179,7 @@
       const out=main.querySelector('[data-signout]');if(out)out.addEventListener('click',signOut);
       const host=main.querySelector('[data-signin]');if(host&&adapter.renderSignIn)adapter.renderSignIn(host,reload);
     }
-    async function load(){const now=++generation,kind=dataPage(page());loading=true;paint();
+    async function load(){const now=++generation,kind=dataKinds[page()]||'home';loading=true;paint();
       let next;
       try{next=await adapter.load(kind,select?select.value:undefined);}
       catch(_){next={ok:false,error:{code:'OFFLINE'}};}
@@ -156,7 +193,8 @@
     if(select)select.addEventListener('change',reload);
     root.addEventListener('hashchange',()=>{
       const any=latest();
-      if(!loading&&['home','attention'].includes(page())&&!responses[page()]&&any&&any.ok)load();else paint();
+      const kind=dataKinds[page()];
+      if(!loading&&kind&&!responses[kind]&&any&&any.ok)load();else paint();
       main.focus();root.scrollTo(0,0);
     });
     load();

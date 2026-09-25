@@ -39,7 +39,7 @@
         return answer;
       },
       async load(kind) {
-        if(kind!=='home'&&kind!=='attention')return failure('BAD_REQUEST');
+        if(!['home','attention','portfolio'].includes(kind))return failure('BAD_REQUEST');
         const session=read();
         if(!session)return failure('UNAUTHENTICATED');
         let result;
