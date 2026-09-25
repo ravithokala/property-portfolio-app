@@ -2,7 +2,7 @@
    persistence, finance or deadline rules: it draws what the server's canonical projections return. */
 (function (root) {
   'use strict';
-  const pages=['home','attention','properties','finance','more','company'];
+  const pages=['home','attention','properties','finance','more','company','maintenance'];
   const labels={overdue:'Overdue',urgent:'Urgent',warning:'Warning',neutral:'Information'};
   // Plain-language messages for the codes a person can act on; everything else is generic.
   const problems={
@@ -17,9 +17,13 @@
   const gbp=value=>known(value)?new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(value):'Not available';
   const percent=value=>known(value)?new Intl.NumberFormat('en-GB',{maximumFractionDigits:2}).format(value)+'%':'Not available';
   // Which server answer each screen draws; More only needs permissions from any answer.
-  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:null,company:'company_compliance'};
+  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:null,company:'company_compliance',maintenance:'maintenance'};
   const words=value=>typeof value==='string'&&value?value.charAt(0).toUpperCase()+value.slice(1).replace(/-/g,' '):'Not recorded';
   // Company compliance form fields, in display order (dates as YYYY-MM-DD text).
+  // Days from the server's canonical assessment only; the browser never works out deadlines.
+  const dayText=days=>typeof days!=='number'?'':days<0?(-days)+(days===-1?' day':' days')+' overdue':days===0?'today':'in '+days+(days===1?' day':' days');
+  // Cost is stored as text or a number; show money only when it is a plain amount.
+  const costText=value=>/^\d+(\.\d{1,2})?$/.test(value)?gbp(Number(value)):value;
   const ccFields=[['type','Type','select'],['status','Status','select'],['due_date','Due date','date'],['period_start','Period start','date'],
     ['period_end','Period end','date'],['action_date','Action date','date'],['completed_date','Completed date','date'],
     ['reference','Reference','text'],['managed_by','Managed by','text'],['document','Document','text'],['notes','Notes','textarea']];
@@ -40,7 +44,7 @@
     return day(at)===day(new Date())?new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'}).format(at):
       new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',timeZone:'Europe/London'}).format(at);
   }
-  const titles={home:'Home',attention:'Attention',properties:'Properties',finance:'Finance',more:'More',company:'Company compliance'};
+  const titles={home:'Home',attention:'Attention',properties:'Properties',finance:'Finance',more:'More',company:'Company compliance',maintenance:'Maintenance'};
   const code=response=>response&&response.error&&typeof response.error.code==='string'?response.error.code:null;
   // options: {canSignOut, version}. page 'attention' expects the full Attention response.
   function render(doc,main,response,page='home',loading=false,options={}) {
@@ -161,10 +165,55 @@
       }
       return;
     }
+    if(page==='maintenance'){
+      const d=response.data,filter=d.properties.includes(options.propertyFilter)?options.propertyFilter:'';
+      heading('Maintenance');
+      if(d.properties.length>1){
+        const wrap=add(main,'label',undefined,'field filter');add(wrap,'span','Property');
+        const select=add(wrap,'select');select.setAttribute('data-mnt-filter','true');
+        for(const id of ['',...d.properties]){const o=add(select,'option',id||'All properties');o.value=id;if(id===filter)o.selected=true;}
+        select.value=filter;
+      }
+      const pick=records=>filter?records.filter(r=>r.property_id===filter):records;
+      const item=(parent,r)=>{
+        const row=add(parent,'li'),top=add(row,'div',undefined,'item-top');
+        if(r.level)badge(top,r.level);else add(top,'span',words(r.status),'badge neutral');
+        add(top,'span',[r.property_id,r.category?words(r.category):words(r.maintenance_type)].join(' · '),'item-scope');
+        add(row,'p',r.description||(r.category?words(r.category):'No description'),'item-action');
+        const when=[];
+        if(r.group==='recurring'){
+          when.push(r.missing_next_due_date?'Next due date missing':r.next_due_date?'Next due '+date(r.next_due_date):'No next due date');
+          if(r.days!==null)when.push(dayText(r.days));
+          if(r.completed_date)when.push('Last done '+date(r.completed_date));
+        } else if(r.group==='open'){
+          if(r.level)when.push(words(r.status));
+          if(r.priority&&r.priority!=='normal')when.push(words(r.priority)+' priority');
+          if(r.target_date)when.push('Target '+date(r.target_date)+(r.days!==null?' · '+dayText(r.days):''));
+        } else when.push(r.status==='completed'?(r.completed_date?'Completed '+date(r.completed_date):'Completed'):words(r.status));
+        if(when.length)add(row,'p',when.join(' · '),'subtext');
+        const who=[r.contractor,r.cost?costText(r.cost):'',r.maintenance_id].filter(Boolean);
+        add(row,'p',who.join(' · '),'subtext');
+        if(r.resolution)add(row,'p','Resolution: '+r.resolution,'subtext');
+      };
+      const grid=add(main,'div',undefined,'grid');
+      const section=(name,title,records,closed)=>{
+        const box=card(grid,title);add(box.head,'span',String(records.length),'item-scope');
+        if(!records.length){empty(box.el,name==='open'?'No open maintenance.':name==='recurring'?'No recurring maintenance.':'No closed maintenance.');return;}
+        let parent=box.el;
+        if(closed){parent=add(box.el,'details');add(parent,'summary','Show '+records.length+' closed');}
+        const ul=list(parent);for(const r of records)item(ul,r);
+      };
+      section('open','Open',pick(d.groups.open));
+      section('recurring','Recurring',pick(d.groups.recurring));
+      section('closed','Closed',pick(d.groups.closed),true);
+      return;
+    }
     if(page==='more'){
       heading('More');
       const box=card(main,'More','placeholder');add(box.el,'span','⌂','symbol').setAttribute('aria-hidden','true');
-      const company=add(box.el,'a',response.permissions.can_write===true?'Company compliance · view and edit':'Company compliance · view','button');company.href='#company';
+      const links=add(box.el,'div',undefined,'actions');
+      const maintenance=add(links,'a','Maintenance · view','button');maintenance.href='#maintenance';
+      const company=add(links,'a',response.permissions.can_write===true?'Company compliance · view and edit':'Company compliance · view','button');company.href='#company';
       const actions=add(box.el,'div',undefined,'actions');
       if(options.canSignOut)button(actions,'Sign out','data-signout');
       const back=add(actions,'a','Back to Home','button');back.href='#home';
@@ -191,6 +240,7 @@
     }
     if(full)return;
     const maintenance=card(grid,'Open maintenance');
+    {const link=add(maintenance.head,'a','All');link.href='#maintenance';}
     add(maintenance.el,'p',data.maintenance.follow_up_count+' follow-ups','subtext');
     if(!data.maintenance.items.length)empty(maintenance.el,'No maintenance follow-ups to show.');
     const repairs=list(maintenance.el);
@@ -220,10 +270,10 @@
   function mount(doc,adapter) {
     const main=doc.getElementById('main'),select=doc.getElementById('scenario');
     // One 'all' answer serves every screen (memory only). problem holds a failed answer instead.
-    let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null;
+    let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null,propertyFilter='';
     const REFRESH_AFTER_MS=5*60*1000;
     const page=()=>pages.includes(root.location.hash.slice(1))?root.location.hash.slice(1):'home';
-    const options={canSignOut:typeof adapter.signOut==='function',version:adapter.version,form:null};
+    const options={canSignOut:typeof adapter.signOut==='function',version:adapter.version,form:null,propertyFilter:''};
     // Each screen's answer is the matching part of 'all', in the shape its own action returns.
     function current(){
       if(problem)return problem;
@@ -239,11 +289,13 @@
       if(title)title.textContent=form?(form.mode==='create'?'Add record':'Edit record'):titles[page()]||'Home';
       const refresh=doc.getElementById('refresh');
       if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
-      const tab=page()==='company'?'more':page();
+      const tab=['company','maintenance'].includes(page())?'more':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
-      options.form=form;
+      options.form=form;options.propertyFilter=propertyFilter;
       render(doc,main,response,page(),loading,options);
       wireCompany(response);
+      const filter=main.querySelector('[data-mnt-filter]');
+      if(filter)filter.addEventListener('change',()=>{propertyFilter=String(filter.value||'');paint();});
       const retry=main.querySelector('[data-retry]');if(retry)retry.addEventListener('click',reload);
       const out=main.querySelector('[data-signout]');if(out)out.addEventListener('click',signOut);
       const host=main.querySelector('[data-signin]');if(host&&adapter.renderSignIn)adapter.renderSignIn(host,reload);
