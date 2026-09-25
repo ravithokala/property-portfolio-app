@@ -136,16 +136,14 @@
       const total=card(grid,'Portfolio finance','attention-card');
       metricList(total.el,[['Current property value',gbp(t.total_current_property_value)],['Mortgage exposure',gbp(t.total_current_mortgage_balance)],
         ['Portfolio LTV',percent(t.portfolio_ltv)],['Rent per month',gbp(t.total_monthly_contractual_rent)],
-        ['Mortgage payments per month',gbp(t.total_monthly_mortgage_cost)],['Cashflow per month',gbp(t.monthly_cashflow_before_operating_expenses)],
-        ['Rent per year',gbp(t.total_annual_contractual_rent)],['Cashflow per year',gbp(t.annual_cashflow_before_operating_expenses)],
-        ['Mortgage interest per month (est.)',gbp(t.total_monthly_interest_estimate)],['Mortgage interest per year (est.)',gbp(t.total_annual_interest_estimate)]]);
+        ['Mortgage payments (interest) per month',gbp(t.total_monthly_mortgage_cost)],['Cashflow per month',gbp(t.monthly_cashflow_before_operating_expenses)],
+        ['Rent per year',gbp(t.total_annual_contractual_rent)],['Mortgage payments (interest) per year',gbp(t.total_annual_mortgage_cost)],
+        ['Cashflow per year',gbp(t.annual_cashflow_before_operating_expenses)]]);
       add(total.el,'p','Cashflow is rent minus mortgage payments, before operating expenses — not profit.','note');
-      add(total.el,'p','Interest is estimated as current balance × rate ÷ 12. For tax, use the lender’s annual statement.','note');
       if(!t.complete)add(total.el,'p','Incomplete finance data. Unknown values are not treated as zero.','note');
       for(const item of response.data.properties){
         const box=card(grid,item.property_id);
-        metricList(box.el,[['Rent per month',gbp(item.tenancy.monthly_rent)],['Mortgage payment per month',gbp(item.mortgage.monthly_payment)],
-          ['Interest per month (est.)',gbp(item.finance.monthly_interest_estimate)],['Capital per month (est.)',gbp(item.finance.monthly_capital_estimate)],
+        metricList(box.el,[['Rent per month',gbp(item.tenancy.monthly_rent)],['Mortgage payment (interest) per month',gbp(item.mortgage.monthly_payment)],
           ['Cashflow per month',gbp(item.finance.monthly_cashflow_before_operating_expenses)],['LTV',percent(item.finance.ltv)],
           ['Principal repaid',gbp(item.finance.principal_repaid_total)],['Principal repaid %',percent(item.finance.principal_repaid_pct)]]);
       }
