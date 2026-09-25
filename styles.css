@@ -26,3 +26,12 @@ main:focus,main:focus-visible{outline:none}
 /* Every card looks the same: colour is reserved for severity (counters and badges). */
 .attention-card{border-top:1px solid var(--line)}
 .field.check{grid-template-columns:auto 1fr;align-items:center;gap:10px}.field.check span{order:2;color:var(--ink);font-size:.95rem}.field.check input{order:1;width:22px;height:22px;min-height:0}
+/* More: settings-style lists. */
+.menu{padding:4px 0;margin-bottom:10px}.menu-heading{font-size:.78rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 16px 4px;margin:0}
+.menu-row{display:flex;align-items:center;gap:12px;min-height:58px;padding:8px 16px;border-top:1px solid var(--line);color:var(--ink);text-decoration:none;width:100%;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit;text-align:left;cursor:pointer}
+.menu-heading+.menu-row{border-top:0}.menu-row.static{cursor:default}
+.menu-icon{flex:none;width:34px;height:34px;border-radius:9px;background:#e4eee7;color:var(--green);display:grid;place-items:center;font-size:1.05rem}
+.menu-text{flex:1;min-width:0;display:flex;flex-direction:column}.menu-title{font-weight:600}.menu-status{font-size:.8rem;color:var(--muted)}
+.menu-chevron{flex:none;font-size:1.5rem;color:var(--muted);line-height:1}.menu-row .badge{flex:none}
+.menu-button{color:var(--green);font-weight:600}.menu-button.danger{color:#a8322a}
+.version{text-align:center}

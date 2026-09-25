@@ -17,7 +17,7 @@
   const gbp=value=>known(value)?new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(value):'Not available';
   const percent=value=>known(value)?new Intl.NumberFormat('en-GB',{maximumFractionDigits:2}).format(value)+'%':'Not available';
   // Which server answer each screen draws; More only needs permissions from any answer.
-  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:null,company:'company_compliance',maintenance:'maintenance',compliance:'compliance',property:'property'};
+  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:'more',company:'company_compliance',maintenance:'maintenance',compliance:'compliance',property:'property'};
   // Acronyms stay upper case (EPC, EICR, CO); other values read as words.
   const acronyms={epc:'EPC',eicr:'EICR',co:'CO'};
   const words=value=>typeof value==='string'&&value?(acronyms[value]||value.charAt(0).toUpperCase()+value.slice(1).replace(/-/g,' ')):'Not recorded';
@@ -493,17 +493,37 @@
     }
     if(page==='more'){
       heading('More');
-      const box=card(main,'More','placeholder');add(box.el,'span','⌂','symbol').setAttribute('aria-hidden','true');
-      const links=add(box.el,'div',undefined,'actions');
-      // Plain names: whether you can edit shows on each screen (and in the Editor / View only badge).
-      const compliance=add(links,'a','Compliance','button');compliance.href='#compliance';
-      const maintenance=add(links,'a','Maintenance','button');maintenance.href='#maintenance';
-      const company=add(links,'a','Company compliance','button');company.href='#company';
-      const actions=add(box.el,'div',undefined,'actions');
-      if(options.canSignOut)button(actions,'Sign out','data-signout');
-      if(options.canSignOutEverywhere)button(actions,'Sign out all devices','data-signout-all');
-      const back=add(actions,'a','Back to Home','button');back.href='#home';
-      if(typeof options.version==='string')add(box.el,'p','Version '+options.version,'version');
+      const d=response.data||{},rank={overdue:0,urgent:1,warning:2};
+      const worst=levels=>levels.filter(l=>Object.hasOwn(rank,l)).sort((a,b)=>rank[a]-rank[b])[0]||null;
+      const plural=(n,one,many)=>n+' '+(n===1?one:many);
+      // One tappable row: icon, name, status line, severity badge (when something needs attention), chevron.
+      const row=(list,href,icon,title,status,level)=>{
+        const a=add(list,'a',undefined,'menu-row');a.href=href;
+        add(a,'span',icon,'menu-icon').setAttribute('aria-hidden','true');
+        const text=add(a,'span',undefined,'menu-text');add(text,'span',title,'menu-title');if(status)add(text,'span',status,'menu-status');
+        if(level)badge(a,level);
+        add(a,'span','›','menu-chevron').setAttribute('aria-hidden','true');
+      };
+      const lists=add(main,'section',undefined,'card menu');lists.setAttribute('aria-label','Portfolio lists');
+      add(lists,'h2','Portfolio','menu-heading');
+      const c=d.compliance&&d.compliance.groups,m=d.maintenance&&d.maintenance.groups,cc=d.company_compliance&&d.company_compliance.records;
+      row(lists,'#compliance','✓','Compliance',c?(c.due.length?plural(c.due.length,'needs renewal','need renewal')+' · ':'')+plural(c.current.length,'current','current'):'',
+        c?worst(c.due.map(r=>r.level)):null);
+      row(lists,'#maintenance','⚒','Maintenance',m?plural(m.open.length,'open job','open jobs')+' · '+plural(m.recurring.length,'recurring','recurring'):'',
+        m?worst(m.open.concat(m.recurring).map(r=>r.level)):null);
+      const pending=cc?cc.filter(r=>r.status==='pending').length:0;
+      row(lists,'#company','◧','Company compliance',cc?(pending?plural(pending,'pending','pending'):'Nothing pending'):'',
+        worst(((d.attention&&d.attention.items)||[]).filter(i=>i.category==='Company compliance').map(i=>i.level)));
+      const account=add(main,'section',undefined,'card menu');account.setAttribute('aria-label','Account');
+      add(account,'h2','Account','menu-heading');
+      const who=add(account,'div',undefined,'menu-row static');
+      add(who,'span',response.permissions&&response.permissions.can_write?'✎':'◎','menu-icon').setAttribute('aria-hidden','true');
+      const whoText=add(who,'span',undefined,'menu-text');
+      add(whoText,'span',response.permissions&&response.permissions.can_write?'Editor':'View only','menu-title');
+      add(whoText,'span',response.permissions&&response.permissions.can_write?'You can add and edit records':'You can view everything; editing is off','menu-status');
+      if(options.canSignOut){const out=button(account,'Sign out','data-signout');out.className='menu-row menu-button';}
+      if(options.canSignOutEverywhere){const all=button(account,'Sign out all devices','data-signout-all');all.className='menu-row menu-button danger';}
+      if(typeof options.version==='string')add(main,'p','Version '+options.version,'version');
       return;
     }
     const full=page==='attention',data=response.data,attentionData=full?data:data.attention;
@@ -570,6 +590,9 @@
       if(!all)return null;
       const kind=dataKinds[page()]||'home';
       // A property page draws from several parts of the one answer.
+      // More shows a status line for each list, from the same answer.
+      if(kind==='more')return {...all,warnings:[],data:{compliance:all.data.compliance,maintenance:all.data.maintenance,
+        company_compliance:all.data.company_compliance,attention:all.data.attention}};
       if(kind==='property')return {...all,warnings:[],data:{portfolio:all.data.portfolio,compliance:all.data.compliance,maintenance:all.data.maintenance}};
       return {...all,warnings:kind==='home'?all.warnings:[],data:all.data[kind]};
     }
