@@ -418,9 +418,10 @@
       heading('More');
       const box=card(main,'More','placeholder');add(box.el,'span','⌂','symbol').setAttribute('aria-hidden','true');
       const links=add(box.el,'div',undefined,'actions');
-      const compliance=add(links,'a','Compliance · view','button');compliance.href='#compliance';
-      const maintenance=add(links,'a',response.permissions.can_write===true?'Maintenance · view and edit':'Maintenance · view','button');maintenance.href='#maintenance';
-      const company=add(links,'a',response.permissions.can_write===true?'Company compliance · view and edit':'Company compliance · view','button');company.href='#company';
+      // Plain names: whether you can edit shows on each screen (and in the Editor / View only badge).
+      const compliance=add(links,'a','Compliance','button');compliance.href='#compliance';
+      const maintenance=add(links,'a','Maintenance','button');maintenance.href='#maintenance';
+      const company=add(links,'a','Company compliance','button');company.href='#company';
       const actions=add(box.el,'div',undefined,'actions');
       if(options.canSignOut)button(actions,'Sign out','data-signout');
       const back=add(actions,'a','Back to Home','button');back.href='#home';
