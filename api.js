@@ -12,9 +12,9 @@
   function create(config) {
     // A plain-text POST needs no CORS pre-flight, which Apps Script cannot answer.
     // Apps Script can be slow to start, but a request never waits more than 90 seconds.
-    async function post(body) {
+    async function post(body,timeoutMs=90000) {
       const controller=typeof root.AbortController==='function'?new root.AbortController():null;
-      const timer=controller?root.setTimeout(()=>controller.abort(),90000):null;
+      const timer=controller?root.setTimeout(()=>controller.abort(),timeoutMs):null;
       let response;
       try {
         response=await root.fetch(config.apiUrl,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -61,6 +61,21 @@
         try{result=await post({...payload,action,session});}catch(_){return failure('OFFLINE');}
         if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
         return result;
+      },
+      // PWA.9B: attach a file to a record (up to 10 MB; slow connections get three minutes).
+      async uploadDocument(payload) {
+        const session=read();
+        if(!session)return failure('UNAUTHENTICATED');
+        let result;
+        try{result=await post({...payload,action:'document.upload',session},180000);}catch(_){return failure('OFFLINE');}
+        if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
+        return result;
+      },
+      // PWA.9B: confirms the Google account on this device before an upload (the token goes straight to the server).
+      async confirmSignIn(idToken) {
+        const session=read();
+        if(!session)return failure('UNAUTHENTICATED');
+        try{return await post({action:'auth.confirm',session,id_token:idToken});}catch(_){return failure('OFFLINE');}
       },
       // PWA.9A: a Drive link for a record's document (both users).
       async openDocument(tab,id,field) {

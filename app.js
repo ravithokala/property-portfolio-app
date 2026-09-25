@@ -10,7 +10,7 @@
   const configured=/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(config.apiUrl||'') &&
     /^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(config.clientId||'');
   const api=configured?root.PortfolioApi.create(config):null;
-  let signInProblem=null, afterSignIn=null, gisReady=false;
+  let signInProblem=null, afterSignIn=null, gisReady=false, confirmDone=null;
   const gis=()=>root.google&&root.google.accounts&&root.google.accounts.id;
 
   async function waitForGis() {
@@ -19,6 +19,8 @@
   }
   // The Google ID token goes straight to the server and is never stored.
   async function onCredential(response) {
+    // A credential asked for by "confirm it's you" (uploads) confirms this session instead of signing in.
+    if(confirmDone){const done=confirmDone;confirmDone=null;done(await api.confirmSignIn(response&&response.credential));return;}
     const result=await api.signIn(response&&response.credential);
     // A token the server could not verify is shown as a sign-in problem, not a silent retry.
     signInProblem=result.ok?null:{code:result.error.code==='UNAUTHENTICATED'?'SIGN_IN_FAILED':result.error.code,reason:result.error.reason};
@@ -35,6 +37,19 @@
     save:async(action,payload)=>api?api.write(action,payload):{ok:false,schema_version:1,error:{code:'NOT_CONFIGURED'}},
     newRequestId:()=>root.crypto.randomUUID(),
     signOut:async()=>{if(api)await api.signOut();const id=gis();if(id)id.disableAutoSelect();},
+    uploadDocument:async payload=>api?api.uploadDocument(payload):{ok:false,error:{code:'NOT_CONFIGURED'}},
+    // Shows Google's button in host; done(result) once the server has confirmed the account.
+    async renderConfirm(host,done) {
+      if(!api){done({ok:false,error:{code:'NOT_CONFIGURED'}});return;}
+      if(!await waitForGis()){host.textContent='Google sign-in did not load. Check the connection and try again.';return;}
+      if(!gisReady){
+        gis().initialize({client_id:config.clientId,callback:onCredential,auto_select:true,use_fedcm_for_prompt:true,cancel_on_tap_outside:false});
+        gisReady=true;
+      }
+      confirmDone=done;
+      gis().renderButton(host,{theme:'outline',size:'large',text:'continue_with',shape:'pill'});
+      gis().prompt();
+    },
     openDocument:async(tab,id,field)=>api?api.openDocument(tab,id,field):{ok:false,error:{code:'NOT_CONFIGURED'}},
     signOutEverywhere:async()=>{const result=api?await api.signOutEverywhere():{ok:false,error:{code:'NOT_CONFIGURED'}};const id=gis();if(id&&result.ok)id.disableAutoSelect();return result;},
     async renderSignIn(host,done) {

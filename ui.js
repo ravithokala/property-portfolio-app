@@ -157,6 +157,25 @@
       select.value=filter;
     };
     const when=value=>value?date(value):'Not recorded';
+    // PWA.9B attach form: one file, uploaded to the record's folder; may first ask to confirm with Google.
+    const attaching=options.form;
+    if(attaching&&attaching.kind==='attach'&&response.permissions&&response.permissions.can_write===true){
+      heading('Attach document');
+      const box=card(main,'Attach '+attaching.label);
+      add(box.el,'p',attaching.id,'subtext');
+      if(attaching.hasCurrent)add(box.el,'p','This replaces the link to the current document. The old file stays in Google Drive.','note');
+      if(attaching.message){const note=add(box.el,'p',attaching.message,'note');note.setAttribute('role','alert');}
+      if(attaching.needsConfirm){add(box.el,'p','For uploads, confirm it’s you with Google (needed once every 12 hours on this device).','note');
+        add(box.el,'div',undefined,'signin-host').setAttribute('data-confirm-host','true');}
+      const f=add(box.el,'form',undefined,'cc-form');f.setAttribute('data-attach-form','true');
+      const wrap=add(f,'label',undefined,'field');add(wrap,'span','Photo or PDF (up to 10 MB)');
+      const input=add(wrap,'input');input.type='file';input.setAttribute('accept','application/pdf,image/jpeg,image/png,image/heic,image/heif,.heic,.heif');
+      input.name='file';input.setAttribute('name','file');
+      const actions=add(f,'div',undefined,'actions');
+      const save=add(actions,'button',attaching.saving?'Uploading…':'Upload','button');save.type='submit';save.disabled=attaching.saving===true;save.setAttribute('data-mutation','document-attach');
+      button(actions,'Cancel','data-attach-cancel');
+      return;
+    }
     // PWA.7 quick edits (value, mortgage, rent, renewal): one form; the fields travel with it.
     const quick=options.form;
     if(quick&&quick.quick&&response.permissions&&response.permissions.can_write===true){
@@ -190,6 +209,10 @@
     const docButton=(parent,label,tab,id,field,value)=>{if(typeof value!=='string'||!value)return;
       const el=button(parent,label,'data-open-doc');el.className='button small';
       el.setAttribute('data-doc-tab',tab);el.setAttribute('data-doc-id',id);el.setAttribute('data-doc-field',field);};
+    // PWA.9B: attach a file to a record's document field (PRIMARY only).
+    const attachButton=(parent,label,tab,id,field,version,current)=>{if(!(response.permissions&&response.permissions.can_write===true)||!version)return;
+      const el=button(parent,label,'data-attach');el.className='button small';el.setAttribute('data-mutation','document-attach');
+      for(const [k,v] of [['tab',tab],['id',id],['field',field],['version',version],['label',label.replace(/^Attach /,'')],['has',current?'yes':'']])el.setAttribute('data-attach-'+k,v);};
     // A small button that opens a quick edit (PRIMARY only).
     const quickButton=(parent,text,kind,id)=>{if(response.permissions&&response.permissions.can_write===true){
       const el=button(parent,text,'data-quick');el.setAttribute('data-quick',kind);if(id)el.setAttribute('data-quick-id',id);el.className='button small';el.setAttribute('data-mutation',kind+'-update');}};
@@ -249,7 +272,10 @@
           ['Right to rent checked',when(t.right_to_rent_check_date)]]).className='metrics compact';
         {const docs=add(tenancy.el,'div',undefined,'actions start');docButton(docs,'Tenancy agreement','Tenancies',t.tenancy_id,'tenancy_document',t.tenancy_document);
           docButton(docs,'Deposit certificate','Tenancies',t.tenancy_id,'deposit_document',t.deposit_document);
-          docButton(docs,'Right to rent evidence','Tenancies',t.tenancy_id,'right_to_rent_evidence_location',t.right_to_rent_evidence_location);}
+          docButton(docs,'Right to rent evidence','Tenancies',t.tenancy_id,'right_to_rent_evidence_location',t.right_to_rent_evidence_location);
+          attachButton(docs,'Attach tenancy agreement','Tenancies',t.tenancy_id,'tenancy_document',t.version,t.tenancy_document);
+          attachButton(docs,'Attach deposit certificate','Tenancies',t.tenancy_id,'deposit_document',t.version,t.deposit_document);
+          attachButton(docs,'Attach right to rent evidence','Tenancies',t.tenancy_id,'right_to_rent_evidence_location',t.version,t.right_to_rent_evidence_location);}
         const row=add(tenancy.el,'div',undefined,'actions start');quickButton(row,'Update rent','rent');
         if(['current','pending'].includes(t.status))quickButton(row,'End tenancy','end-tenancy');
         quickButton(row,'New tenancy','new-tenancy');
@@ -266,7 +292,8 @@
         if(r.level)badge(top,r.level);else add(top,'span',words(r.status),'badge neutral');add(top,'span',words(r.compliance_type),'item-scope');
         add(li,'p',r.expiry_date?'Expiry '+date(r.expiry_date)+(r.days_to_expiry!==null?' · '+expiryText(r.days_to_expiry):''):'No expiry date recorded','subtext');
         if(r.renewal_status)add(li,'p','Renewal '+words(r.renewal_status).toLowerCase(),'subtext');
-        {const docs=add(li,'div',undefined,'actions start');docButton(docs,'Open certificate','Compliance',r.compliance_id,'document',r.document);}
+        {const docs=add(li,'div',undefined,'actions start');docButton(docs,'Open certificate','Compliance',r.compliance_id,'document',r.document);
+          attachButton(docs,'Attach certificate','Compliance',r.compliance_id,'document',r.version,r.document);}
         {const row=add(li,'div',undefined,'actions start');if(['current','pending'].includes(r.status))quickButton(row,'Renew','renew',r.compliance_id);
           quickButton(row,'Renewal status','renewal',r.compliance_id);}}}
       const repairs=card(grid,'Maintenance');
@@ -339,7 +366,8 @@
           ['Period',r.period_start||r.period_end?(r.period_start?date(r.period_start):'?')+' – '+(r.period_end?date(r.period_end):'?'):'Not recorded'],
           ['Completed',r.completed_date?date(r.completed_date):'Not recorded'],['Reference',recorded(r.reference)],['Managed by',recorded(r.managed_by)]]);
         if(r.notes)add(box.el,'p',r.notes,'note');
-        {const docs=add(box.el,'div',undefined,'actions start');docButton(docs,'Open document','CompanyCompliance',r.company_compliance_id,'document',r.document);}
+        {const docs=add(box.el,'div',undefined,'actions start');docButton(docs,'Open document','CompanyCompliance',r.company_compliance_id,'document',r.document);
+          attachButton(docs,'Attach document','CompanyCompliance',r.company_compliance_id,'document',r.version,r.document);}
         if(canWrite){const edit=button(box.el,'Edit','data-cc-edit');edit.setAttribute('data-cc-edit',r.company_compliance_id);edit.setAttribute('data-mutation','company-compliance-update');}
       }
       return;
@@ -401,7 +429,9 @@
         add(row,'p',who.join(' · '),'subtext');
         if(r.resolution)add(row,'p','Resolution: '+r.resolution,'subtext');
         {const docs=add(row,'div',undefined,'actions start');docButton(docs,'Open invoice','Maintenance',r.maintenance_id,'invoice_document',r.invoice_document);
-          docButton(docs,'Open supporting document','Maintenance',r.maintenance_id,'supporting_document',r.supporting_document);}
+          docButton(docs,'Open supporting document','Maintenance',r.maintenance_id,'supporting_document',r.supporting_document);
+          attachButton(docs,'Attach invoice','Maintenance',r.maintenance_id,'invoice_document',r.version,r.invoice_document);
+          attachButton(docs,'Attach supporting document','Maintenance',r.maintenance_id,'supporting_document',r.version,r.supporting_document);}
         if(canWrite){
           const actions=add(row,'div',undefined,'actions start');
           const act=(text,attribute,mode)=>{const el=button(actions,text,attribute);el.setAttribute(attribute,r.maintenance_id);el.setAttribute('data-mutation','maintenance-'+mode);el.className='button small';};
@@ -442,7 +472,8 @@
         add(row,'p',who.join(' · '),'subtext');
         const alarms=[r.smoke_alarms_checked===true?'Smoke alarms checked':'',r.co_alarms_checked===true?'CO alarms checked':''].filter(Boolean);
         if(alarms.length)add(row,'p',alarms.join(' · '),'subtext');
-        {const docs=add(row,'div',undefined,'actions start');docButton(docs,'Open certificate','Compliance',r.compliance_id,'document',r.document);}
+        {const docs=add(row,'div',undefined,'actions start');docButton(docs,'Open certificate','Compliance',r.compliance_id,'document',r.document);
+          if(r.group!=='history')attachButton(docs,'Attach certificate','Compliance',r.compliance_id,'document',r.version,r.document);}
         if(r.group!=='history'){const actions=add(row,'div',undefined,'actions start');
           if(['current','pending'].includes(r.status))quickButton(actions,'Renew','renew',r.compliance_id);
           quickButton(actions,'Renewal status','renewal',r.compliance_id);}
@@ -550,7 +581,7 @@
       doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
       const timing=doc.getElementById('timing');if(timing)timing.textContent=all?timingText(all):'';
       const title=doc.getElementById('screen-title');
-      if(title)title.textContent=form?(form.quick?form.shortTitle||form.title:form.kind==='maintenance'?mntTitles[form.mode]:
+      if(title)title.textContent=form?(form.kind==='attach'?'Attach':form.quick?form.shortTitle||form.title:form.kind==='maintenance'?mntTitles[form.mode]:
         form.mode==='create'?'Add record':'Edit record'):page()==='property'?route().propertyId:titles[page()]||'Home';
       const refresh=doc.getElementById('refresh');
       if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
@@ -568,6 +599,7 @@
       const retry=main.querySelector('[data-retry]');if(retry)retry.addEventListener('click',reload);
       const out=main.querySelector('[data-signout]');if(out)out.addEventListener('click',signOut);
       wireDocuments();
+      wireAttach();
       const everywhere=main.querySelector('[data-signout-all]');if(everywhere)everywhere.addEventListener('click',signOutEverywhere);
       const host=main.querySelector('[data-signin]');if(host&&adapter.renderSignIn)adapter.renderSignIn(host,reload);
     }
@@ -714,6 +746,57 @@
         const code=result&&result.error&&result.error.code;
         el.textContent=documentProblems[code]||'Could not open ('+(typeof code==='string'&&/^[A-Z_]{1,40}$/.test(code)?code:'UNKNOWN')+')';
       });
+    }
+    // PWA.9B: pick a file, check it here (type, 10 MB), send it; if the server asks, confirm with Google first
+    // and then send the same request again (same request id, so it is never saved twice).
+    const attachProblems={FILE_TOO_LARGE:'The file is larger than 10 MB.',FILE_TYPE_MISMATCH:'That file is not a PDF, JPEG, PNG or HEIC image.',
+      DOCUMENTS_NOT_CONFIGURED:'The Documents folder is not set up for the app.',DOCUMENT_FOLDER_AMBIGUOUS:'Two folders match; tidy the Documents folder first.',
+      DOCUMENT_SAVE_FAILED:'Google Drive did not save the file. Try again.',STALE:'This record changed since you opened it. Cancel and open it again.',
+      OFFLINE:'Not saved yet: the portfolio could not be reached. Try again; it will not be saved twice.',SIGN_IN_MISMATCH:'Confirm with the same Google account you signed in with.',
+      BUSY:'Another save is in progress. Try again in a moment.'};
+    const fileTypes={pdf:'application/pdf',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',heic:'image/heic',heif:'image/heif'};
+    function wireAttach(){
+      if(typeof adapter.uploadDocument!=='function')return;
+      for(const el of main.querySelectorAll('[data-attach]'))el.addEventListener('click',()=>{
+        const get=k=>el.getAttribute('data-attach-'+k);
+        form={kind:'attach',tab:get('tab'),id:get('id'),field:get('field'),version:get('version'),label:get('label'),hasCurrent:get('has')==='yes',
+          request_id:adapter.newRequestId(),message:'',needsConfirm:false};paint();main.focus();root.scrollTo(0,0);
+      });
+      const cancel=main.querySelector('[data-attach-cancel]');if(cancel)cancel.addEventListener('click',()=>{form=null;paint();});
+      const host=main.querySelector('[data-confirm-host]');
+      if(host&&form&&form.kind==='attach'&&typeof adapter.renderConfirm==='function'){const current=form;adapter.renderConfirm(host,result=>{
+        if(form!==current)return;
+        if(result&&result.ok){current.needsConfirm=false;upload(current);}
+        else {current.message=attachProblems[result&&result.error&&result.error.code]||'Google did not confirm the account. Try again.';paint();}
+      });}
+      const element=main.querySelector('[data-attach-form]');
+      if(element)element.addEventListener('submit',async event=>{
+        event.preventDefault();if(!form||form.saving)return;
+        const current=form,input=element.querySelector('[name]'),picked=input&&input.files&&input.files[0];
+        if(!picked&&!current.file){current.message='Choose a photo or PDF first.';paint();return;}
+        if(picked){
+          const ext=String(picked.name||'').split('.').pop().toLowerCase(),type=fileTypes[ext]||(Object.values(fileTypes).includes(picked.type)?picked.type:'');
+          if(!type){current.message=attachProblems.FILE_TYPE_MISMATCH;paint();return;}
+          if(picked.size>10*1024*1024){current.message=attachProblems.FILE_TOO_LARGE;paint();return;}
+          try{current.file={type,data:await readBase64(picked)};}catch(_){current.message='The file could not be read. Try again.';paint();return;}
+        }
+        upload(current);
+      });
+    }
+    function readBase64(file){return new Promise((resolve,reject)=>{const reader=new root.FileReader();
+      reader.onload=()=>resolve(String(reader.result).replace(/^data:[^,]*,/,''));reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});}
+    async function upload(current){
+      current.saving=true;current.message='';paint();
+      let result;
+      try{result=await adapter.uploadDocument({request_id:current.request_id,tab:current.tab,id:current.id,field:current.field,
+        expected_version:current.version,file:current.file});}catch(_){result={ok:false,error:{code:'OFFLINE'}};}
+      if(form!==current)return;
+      current.saving=false;
+      if(result&&result.ok){form=null;reload();return;}
+      const code=result&&result.error&&result.error.code;
+      if(code==='REAUTH_REQUIRED'){current.needsConfirm=true;paint();return;}
+      current.message=attachProblems[code]||'Not saved. Reference: '+(typeof code==='string'&&/^[A-Z_]{1,40}$/.test(code)?code:'UNKNOWN');
+      paint();
     }
     // One save attempt for an open form; the form keeps its request_id, so a retry never writes twice.
     async function send(current,action,payload){
