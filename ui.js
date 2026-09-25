@@ -56,8 +56,10 @@
       heading('Your overview is unavailable','No changes have been made.');
       const box=card(main,'Unable to show portfolio','placeholder');box.el.setAttribute('role','alert');
       add(box.el,'p',problem||'We couldn’t safely display the portfolio. Try again in a moment.');
+      // Fixed server codes (never data) so a problem can be diagnosed from a screenshot.
       const reason=response&&response.error&&response.error.reason;
-      if(typeof reason==='string'&&/^[a-z-]{1,40}$/.test(reason))add(box.el,'p','Reference: '+reason,'subtext');
+      const reference=[code(response),reason].filter(x=>typeof x==='string'&&/^[A-Za-z_-]{1,40}$/.test(x)).join(' · ');
+      if(reference)add(box.el,'p','Reference: '+reference,'subtext');
       const actions=add(box.el,'div',undefined,'actions');
       if(code(response)!=='NOT_CONFIGURED')button(actions,'Try again','data-retry');
       if(code(response)==='ACCESS_DENIED'&&options.canSignOut)button(actions,'Use another account','data-signout');
