@@ -205,18 +205,22 @@
   // Responses live in memory only; nothing is written to device storage here.
   function mount(doc,adapter) {
     const main=doc.getElementById('main'),select=doc.getElementById('scenario');
-    const responses={};let loading=true,generation=0,form=null;
+    // One 'all' answer serves every screen (memory only). problem holds a failed answer instead.
+    let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null;
+    const REFRESH_AFTER_MS=5*60*1000;
     const page=()=>pages.includes(root.location.hash.slice(1))?root.location.hash.slice(1):'home';
     const options={canSignOut:typeof adapter.signOut==='function',version:adapter.version,form:null};
-    const latest=()=>responses.home||responses.attention||responses.portfolio||responses.company_compliance||null;
-    // More only needs permissions; every other screen needs its own kind of answer.
-    function current(){const kind=dataKinds[page()],any=latest();
-      if(!kind)return any;
-      return responses[kind]||(any&&!any.ok?any:null);}
+    // Each screen's answer is the matching part of 'all', in the shape its own action returns.
+    function current(){
+      if(problem)return problem;
+      if(!all)return null;
+      const kind=dataKinds[page()]||'home';
+      return {...all,warnings:kind==='home'?all.warnings:[],data:all.data[kind]};
+    }
     function paint(){
-      const response=current(),any=latest();
-      doc.getElementById('access').textContent=any&&any.ok?(any.permissions.can_write?'Editor':'View only'):(select?'Preview':'Signed out');
-      doc.getElementById('freshness').textContent=response&&response.ok?observed(response.observed_at):'No live connection';
+      const response=current();
+      doc.getElementById('access').textContent=all?(all.permissions.can_write?'Editor':'View only'):(select?'Preview':'Signed out');
+      doc.getElementById('freshness').textContent=refreshing?'Updating…':all?(stale?'Could not update · ':'')+observed(all.observed_at):'No live connection';
       const tab=page()==='company'?'more':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
       options.form=form;
@@ -226,14 +230,20 @@
       const out=main.querySelector('[data-signout]');if(out)out.addEventListener('click',signOut);
       const host=main.querySelector('[data-signin]');if(host&&adapter.renderSignIn)adapter.renderSignIn(host,reload);
     }
-    async function load(){const now=++generation,kind=dataKinds[page()]||'home';loading=true;paint();
+    // With data already shown, a refresh keeps it on screen and only the header says "Updating…".
+    async function load(){const now=++generation;
+      if(all)refreshing=true;else loading=true;
+      paint();
       let next;
-      try{next=await adapter.load(kind,select?select.value:undefined);}
+      try{next=await adapter.load('all',select?select.value:undefined);}
       catch(_){next={ok:false,error:{code:'OFFLINE'}};}
       if(now!==generation)return;
-      // A sign-in problem applies to every screen, so earlier answers are dropped.
-      if(!next||next.ok!==true)for(const key of Object.keys(responses))delete responses[key];
-      responses[kind]=next;loading=false;paint();
+      loading=false;refreshing=false;loadedAt=Date.now();
+      if(next&&next.ok===true){all=next;problem=null;stale=false;}
+      // Offline during a refresh keeps the last answer; any other problem (e.g. signed out) clears it.
+      else if(all&&next&&next.error&&next.error.code==='OFFLINE')stale=true;
+      else {all=null;problem=next||{ok:false,error:{code:'OFFLINE'}};}
+      paint();
     }
     // Company compliance add/edit. One request_id per opened form, reused on retry, so an uncertain
     // save that is sent again never writes twice.
@@ -266,14 +276,16 @@
         paint();
       });
     }
-    function reload(){for(const key of Object.keys(responses))delete responses[key];return load();}
-    async function signOut(){try{await adapter.signOut();}catch(_){}return reload();}
-    if(select)select.addEventListener('change',reload);
+    function reload(){return load();}
+    function reset(){all=null;problem=null;return load();}
+    async function signOut(){try{await adapter.signOut();}catch(_){}return reset();}
+    if(select)select.addEventListener('change',reset);
+    // Coming back to the app after a while refreshes in the background.
+    if(typeof doc.addEventListener==='function')doc.addEventListener('visibilitychange',()=>{
+      if(doc.visibilityState==='visible'&&!loading&&!refreshing&&Date.now()-loadedAt>REFRESH_AFTER_MS)load();});
     root.addEventListener('hashchange',()=>{
       form=null;
-      const any=latest();
-      const kind=dataKinds[page()];
-      if(!loading&&kind&&!responses[kind]&&any&&any.ok)load();else paint();
+      paint();
       main.focus();root.scrollTo(0,0);
     });
     load();
