@@ -13,6 +13,7 @@
     OFFLINE:'The portfolio could not be reached. Check the connection and try again.'
   };
   const known=value=>typeof value==='number'&&Number.isFinite(value);
+  const gbpShort=value=>known(value)?new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',notation:'compact',maximumFractionDigits:1}).format(value):'Not available';
   const gbp=value=>known(value)?new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(value):'Not available';
   const percent=value=>known(value)?new Intl.NumberFormat('en-GB',{maximumFractionDigits:2}).format(value)+'%':'Not available';
   // Which server answer each screen draws; More only needs permissions from any answer.
@@ -32,26 +33,35 @@
     if(typeof value!=='string'||!Number.isFinite(Date.parse(value)))return 'Observation time unavailable';
     return 'Observed '+new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'}).format(new Date(value));
   }
+  // Top-bar time: today's time, or the date if older.
+  function updatedAt(value) {
+    if(typeof value!=='string'||!Number.isFinite(Date.parse(value)))return '';
+    const at=new Date(value),day=d=>new Intl.DateTimeFormat('en-GB',{dateStyle:'short',timeZone:'Europe/London'}).format(d);
+    return day(at)===day(new Date())?new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'}).format(at):
+      new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',timeZone:'Europe/London'}).format(at);
+  }
+  const titles={home:'Home',attention:'Attention',properties:'Properties',finance:'Finance',more:'More',company:'Company compliance'};
   const code=response=>response&&response.error&&typeof response.error.code==='string'?response.error.code:null;
   // options: {canSignOut, version}. page 'attention' expects the full Attention response.
   function render(doc,main,response,page='home',loading=false,options={}) {
     main.replaceChildren();main.setAttribute('aria-busy',loading?'true':'false');
     const make=(tag,text,className)=>{const el=doc.createElement(tag);if(text!==undefined)el.textContent=String(text);if(className)el.className=className;return el;};
     const add=(parent,tag,text,cls)=>{const el=make(tag,text,cls);parent.appendChild(el);return el;};
-    const heading=(title,subtitle)=>{const intro=add(main,'div',undefined,'intro');add(intro,'p','Your portfolio, at a glance','eyebrow');add(intro,'h1',title);add(intro,'p',subtitle);};
+    // The screen name is in the top bar; each screen keeps a heading for screen readers only.
+    const heading=title=>{add(main,'h1',title,'sr-only');};
     const card=(parent,title,cls='')=>{const el=add(parent,'section',undefined,'card '+cls);el.setAttribute('aria-label',title);const head=add(el,'div',undefined,'card-head');add(head,'h2',title);return {el,head};};
     const badge=(parent,level)=>add(parent,'span',labels[level]||labels.neutral,'badge '+(Object.hasOwn(labels,level)?level:'neutral'));
     const empty=(parent,text)=>add(parent,'p',text,'empty');
     const list=parent=>add(parent,'ul',undefined,'list');
     const button=(parent,text,attribute)=>{const el=add(parent,'button',text,'button');el.type='button';el.setAttribute(attribute,'true');return el;};
     if(loading){
-      heading('Getting your overview','Loading your portfolio.');
+      heading('Getting your overview');
       const box=card(main,'Loading portfolio');const status=add(box.el,'p','Loading…','loading-text');status.setAttribute('role','status');
       for(let i=0;i<4;i++)add(box.el,'div',undefined,'skeleton'+(i%2?' short':'')).setAttribute('aria-hidden','true');
       return;
     }
     if(code(response)==='UNAUTHENTICATED'){
-      heading('Sign in','Use the Google account that has access to the portfolio.');
+      heading('Sign in');
       const box=card(main,'Sign in','placeholder');
       add(box.el,'p','Your portfolio is private. Sign in once on this device; it stays signed in for 30 days of use.');
       add(box.el,'div',undefined,'signin-host').setAttribute('data-signin','true');
@@ -59,7 +69,7 @@
     }
     if(!response||response.ok!==true){
       const problem=problems[code(response)];
-      heading('Your overview is unavailable','No changes have been made.');
+      heading('Your overview is unavailable');
       const box=card(main,'Unable to show portfolio','placeholder');box.el.setAttribute('role','alert');
       add(box.el,'p',problem||'We couldn’t safely display the portfolio. Try again in a moment.');
       // Fixed server codes (never data) so a problem can be diagnosed from a screenshot.
@@ -76,7 +86,7 @@
     const levelBadge=(parent,attention)=>attention.count?badge(parent,attention.level):add(parent,'span','Nothing to review','badge neutral');
     if(page==='properties'){
       const items=response.data.properties;
-      heading('Properties','Each property with its current tenancy and mortgage.');
+      heading('Properties');
       const grid=add(main,'div',undefined,'grid');
       if(!items.length)empty(card(grid,'Properties').el,'No properties are recorded.');
       for(const item of items){
@@ -92,7 +102,7 @@
     }
     if(page==='finance'){
       const t=response.data.totals;
-      heading('Finance','Contractual figures before operating expenses.');
+      heading('Finance');
       const grid=add(main,'div',undefined,'grid');
       const total=card(grid,'Portfolio finance','attention-card');
       metricList(total.el,[['Current property value',gbp(t.total_current_property_value)],['Mortgage exposure',gbp(t.total_current_mortgage_balance)],
@@ -113,7 +123,7 @@
       const d=response.data,canWrite=response.permissions.can_write===true,form=options.form;
       if(form&&canWrite){
         const r=form.record||{},values=form.values||{};
-        heading(form.mode==='create'?'Add record':'Edit '+r.company_compliance_id,'Saved straight to the CompanyCompliance tab of your workbook.');
+        heading(form.mode==='create'?'Add record':'Edit '+r.company_compliance_id);
         const box=card(main,form.mode==='create'?'New company compliance record':'Company compliance record');
         if(form.issues&&form.issues.length){const alert=add(box.el,'div',undefined,'note');alert.setAttribute('role','alert');
           add(alert,'p','Please fix:');const ul=add(alert,'ul');for(const issue of form.issues)add(ul,'li',issue);}
@@ -135,7 +145,7 @@
         button(actions,'Cancel','data-cc-cancel');
         return;
       }
-      heading('Company compliance','Filings and other company obligations.');
+      heading('Company compliance');
       const top=add(main,'div',undefined,'actions');
       if(canWrite)button(top,'Add record','data-cc-add').setAttribute('data-mutation','company-compliance-create');
       const back=add(top,'a','Back to More','button');back.href='#more';
@@ -152,7 +162,7 @@
       return;
     }
     if(page==='more'){
-      heading('More','Account and app details.');
+      heading('More');
       const box=card(main,'More','placeholder');add(box.el,'span','⌂','symbol').setAttribute('aria-hidden','true');
       const company=add(box.el,'a',response.permissions.can_write===true?'Company compliance · view and edit':'Company compliance · view','button');company.href='#company';
       const actions=add(box.el,'div',undefined,'actions');
@@ -162,15 +172,16 @@
       return;
     }
     const full=page==='attention',data=response.data,attentionData=full?data:data.attention;
-    heading(full?'Attention':'What needs attention?',full?'Everything that currently needs a look.':'A clear view of the work ahead.');
-    const grid=add(main,'div',undefined,'grid');
-    const attention=card(grid,full?'All attention items':'Attention today','attention-card');
-    if(!full){const link=add(attention.head,'a','View all →');link.href='#attention';}
-    const summary=add(attention.el,'div',undefined,'summary');add(summary,'span',attentionData.counts.total,'attention-number');add(summary,'span','items to review','attention-label');
-    const chips=add(attention.el,'div',undefined,'chips');
-    for(const level of ['overdue','urgent','warning','neutral'])if(attentionData.counts[level]){
-      add(chips,'span',attentionData.counts[level]+' '+labels[level].toLowerCase(),'badge '+level);
+    heading(full?'Attention':'What needs attention?');
+    // Severity counters first: the whole picture in one row.
+    const counters=add(main,'div',undefined,'counters');counters.setAttribute('aria-label','Attention by severity');
+    for(const level of ['overdue','urgent','warning','neutral']){
+      const count=attentionData.counts[level]||0,c=add(counters,'div',undefined,'counter '+(count?level:'zero'));
+      add(c,'span',count,'counter-number');add(c,'span',level==='neutral'?'Info':labels[level],'counter-label');
     }
+    const grid=add(main,'div',undefined,'grid');
+    const attention=card(grid,full?'All attention items':'Needs attention','attention-card');
+    if(!full&&attentionData.counts.total){const link=add(attention.head,'a','All '+attentionData.counts.total);link.href='#attention';}
     if(!attentionData.items.length)empty(attention.el,'No items currently need attention.');
     const actions=list(attention.el);
     for(const item of attentionData.items){
@@ -188,14 +199,17 @@
     if(!data.upcoming_dates.length)empty(upcoming.el,'No upcoming actionable dates are recorded.');
     const dates=list(upcoming.el);
     for(const item of data.upcoming_dates){const row=add(dates,'li',undefined,'date-row'),text=add(row,'div');add(text,'h3',item.type);add(text,'p',item.property_id||'Company','subtext');const time=add(row,'time',date(item.date));time.setAttribute('datetime',item.date);}
-    const portfolio=card(grid,'Portfolio snapshot'),metrics=add(portfolio.el,'dl',undefined,'metrics'),p=data.portfolio;
-    for(const [label,value]of [['Properties',p.property_count],['Current property value',gbp(p.total_current_property_value)],['Mortgage exposure',gbp(p.total_current_mortgage_balance)],['Portfolio LTV',percent(p.portfolio_ltv)]]){
+    const portfolio=card(grid,'Portfolio snapshot'),p=data.portfolio;
+    add(portfolio.head,'span',p.property_count+(p.property_count===1?' property':' properties'),'item-scope');
+    const metrics=add(portfolio.el,'dl',undefined,'metrics three');
+    // Rounded on Home; Properties and Finance show exact amounts.
+    for(const [label,value]of [['Value',gbpShort(p.total_current_property_value)],['Mortgage',gbpShort(p.total_current_mortgage_balance)],['LTV',percent(p.portfolio_ltv)]]){
       const metric=add(metrics,'div');add(metric,'dt',label);add(metric,'dd',value);
     }
     if(!p.complete)add(portfolio.el,'p','Incomplete finance data. Unknown values are not treated as zero.','note');
-    const regulatory=card(grid,'Regulatory monitoring');
-    if(!data.regulatory.available){add(regulatory.el,'p','Monitoring summary is unavailable. Other portfolio sections are still shown.','note');}
-    else {
+    // Shown only when the server provides it (it is optional and currently unavailable).
+    if(data.regulatory.available){
+      const regulatory=card(grid,'Regulatory monitoring');
       if(!data.regulatory.sources.length)empty(regulatory.el,'No regulatory sources in this summary.');
       const sources=list(regulatory.el);
       for(const source of data.regulatory.sources){const row=add(sources,'li');add(row,'h3',source.title);add(row,'p','Last checked: '+date(source.last_checked?source.last_checked.slice(0,10):null),'subtext');add(row,'p',source.monitoring_due?'Monitoring check due':'Monitoring check not currently due','subtext');}
@@ -220,7 +234,11 @@
     function paint(){
       const response=current();
       doc.getElementById('access').textContent=all?(all.permissions.can_write?'Editor':'View only'):(select?'Preview':'Signed out');
-      doc.getElementById('freshness').textContent=refreshing?'Updating…':all?(stale?'Could not update · ':'')+observed(all.observed_at):'No live connection';
+      doc.getElementById('freshness').textContent=refreshing||loading?'Updating…':all?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
+      const title=doc.getElementById('screen-title');
+      if(title)title.textContent=form?(form.mode==='create'?'Add record':'Edit record'):titles[page()]||'Home';
+      const refresh=doc.getElementById('refresh');
+      if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
       const tab=page()==='company'?'more':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
       options.form=form;
@@ -280,6 +298,8 @@
     function reset(){all=null;problem=null;return load();}
     async function signOut(){try{await adapter.signOut();}catch(_){}return reset();}
     if(select)select.addEventListener('change',reset);
+    const refreshButton=doc.getElementById('refresh');
+    if(refreshButton)refreshButton.addEventListener('click',()=>{if(!loading&&!refreshing)load();});
     // Coming back to the app after a while refreshes in the background.
     if(typeof doc.addEventListener==='function')doc.addEventListener('visibilitychange',()=>{
       if(doc.visibilityState==='visible'&&!loading&&!refreshing&&Date.now()-loadedAt>REFRESH_AFTER_MS)load();});
@@ -290,5 +310,5 @@
     });
     load();
   }
-  root.PortfolioUi={gbp,percent,date,observed,render,mount,pages};
+  root.PortfolioUi={gbp,gbpShort,percent,date,observed,updatedAt,render,mount,pages};
 })(globalThis);
