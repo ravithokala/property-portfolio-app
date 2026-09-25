@@ -1,6 +1,11 @@
 /* Starts the app: Google sign-in, the API adapter and the shell-only service worker. */
 (function (root) {
   'use strict';
+  // GitHub Pages cannot send frame-ancestors, so the app refuses to run inside another page
+  // (no taps can be tricked through a hidden frame).
+  let framed=false;try{framed=root.top!==root.self;}catch(_){framed=true;}
+  if(framed){root.addEventListener('DOMContentLoaded',()=>{const main=root.document.getElementById('main');
+    if(main){main.textContent='This app cannot be shown inside another page. Open it directly.';main.setAttribute('aria-busy','false');}});return;}
   const config=root.PortfolioConfig||{};
   const configured=/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(config.apiUrl||'') &&
     /^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(config.clientId||'');
@@ -30,6 +35,7 @@
     save:async(action,payload)=>api?api.write(action,payload):{ok:false,schema_version:1,error:{code:'NOT_CONFIGURED'}},
     newRequestId:()=>root.crypto.randomUUID(),
     signOut:async()=>{if(api)await api.signOut();const id=gis();if(id)id.disableAutoSelect();},
+    signOutEverywhere:async()=>{const result=api?await api.signOutEverywhere():{ok:false,error:{code:'NOT_CONFIGURED'}};const id=gis();if(id&&result.ok)id.disableAutoSelect();return result;},
     async renderSignIn(host,done) {
       afterSignIn=done;
       if(!await waitForGis()){host.textContent='Google sign-in did not load. Check the connection and reload.';return;}

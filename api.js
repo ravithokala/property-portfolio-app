@@ -62,6 +62,15 @@
         if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
         return result;
       },
+      // Ends every session of this account (e.g. a lost phone), then this device's key.
+      async signOutEverywhere() {
+        const session=read();
+        if(!session)return failure('UNAUTHENTICATED');
+        let result;
+        try{result=await post({action:'auth.end_all',session});}catch(_){return failure('OFFLINE');}
+        if(result.ok||(result.error&&result.error.code==='UNAUTHENTICATED'))forget();
+        return result;
+      },
       async signOut() {
         const session=read();forget();
         if(session)await post({action:'auth.end',session}).catch(()=>{/* offline: the key is gone here anyway */});

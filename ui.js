@@ -424,6 +424,7 @@
       const company=add(links,'a','Company compliance','button');company.href='#company';
       const actions=add(box.el,'div',undefined,'actions');
       if(options.canSignOut)button(actions,'Sign out','data-signout');
+      if(options.canSignOutEverywhere)button(actions,'Sign out all devices','data-signout-all');
       const back=add(actions,'a','Back to Home','button');back.href='#home';
       if(typeof options.version==='string')add(box.el,'p','Version '+options.version,'version');
       return;
@@ -485,7 +486,7 @@
       if(match){let id;try{id=decodeURIComponent(match[1]);}catch(_){id='';}return {page:'property',propertyId:id};}
       return {page:pages.includes(hash)&&hash!=='property'?hash:'home',propertyId:null};};
     const page=()=>route().page;
-    const options={canSignOut:typeof adapter.signOut==='function',version:adapter.version,form:null,propertyFilter:''};
+    const options={canSignOut:typeof adapter.signOut==='function',canSignOutEverywhere:typeof adapter.signOutEverywhere==='function',version:adapter.version,form:null,propertyFilter:''};
     // Each screen's answer is the matching part of 'all', in the shape its own action returns.
     function current(){
       if(problem)return problem;
@@ -520,6 +521,7 @@
       if(filter)filter.addEventListener('change',()=>{propertyFilter=String(filter.value||'');paint();});
       const retry=main.querySelector('[data-retry]');if(retry)retry.addEventListener('click',reload);
       const out=main.querySelector('[data-signout]');if(out)out.addEventListener('click',signOut);
+      const everywhere=main.querySelector('[data-signout-all]');if(everywhere)everywhere.addEventListener('click',signOutEverywhere);
       const host=main.querySelector('[data-signin]');if(host&&adapter.renderSignIn)adapter.renderSignIn(host,reload);
     }
     // With data already shown, a refresh keeps it on screen and only the header says "Updating…".
@@ -646,6 +648,11 @@
     function reload(){return load();}
     function reset(){all=null;problem=null;return load();}
     async function signOut(){try{await adapter.signOut();}catch(_){}return reset();}
+    // Every device signed in with this account signs out (a lost phone); asks first.
+    async function signOutEverywhere(){
+      if(typeof root.confirm==='function'&&!root.confirm('Sign out on every device, including this one?'))return;
+      try{await adapter.signOutEverywhere();}catch(_){}return reset();
+    }
     if(select)select.addEventListener('change',reset);
     const refreshButton=doc.getElementById('refresh');
     if(refreshButton)refreshButton.addEventListener('click',()=>{if(!loading&&!refreshing)load();});
