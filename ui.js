@@ -44,6 +44,24 @@
   const rentFields=[['monthly_rent','Rent per month (£)','money'],['current_rent_effective_date','New rent takes effect','date'],
     ['last_rent_increase_date','Last rent increase','date'],['next_rent_review_date','Next rent review','date']];
   const renewalFields=[['renewal_status','Renewal status','select']];
+  // PWA.8B Renew: the boxes each certificate type uses (every renewal field is still sent; unused ones blank).
+  const renewAll=['certificate_reference','co_alarms_checked','cost','effective_date','energy_rating','energy_score','expiry_date',
+    'inspection_date','potential_energy_rating','potential_energy_score','provider','smoke_alarms_checked','verified'];
+  function renewFieldsFor(type){
+    const provider={'gas-safety':'Engineer','eicr':'Electrician','epc':'Assessor','insurance':'Insurer'}[type]||'Provider';
+    const fields=[['expiry_date',type==='insurance'?'Renewal date':'New expiry date','date']];
+    if(type!=='insurance')fields.push(['inspection_date','Inspection / issue date','date']);
+    if(['insurance','other'].includes(type))fields.push(['effective_date','Start date','date']);
+    fields.push(['provider',provider,'text']);
+    if(type!=='alarms')fields.push(['certificate_reference',type==='insurance'?'Policy number':'Certificate number','text']);
+    fields.push(['cost',type==='insurance'?'Premium (£)':'Cost (£)','money']);
+    if(type==='epc')fields.push(['energy_rating','Energy rating','select'],['energy_score','Energy score','number'],
+      ['potential_energy_rating','Potential rating','select'],['potential_energy_score','Potential score','number']);
+    if(type==='alarms')fields.push(['smoke_alarms_checked','Smoke alarms checked','checkbox']);
+    if(['gas-safety','alarms'].includes(type))fields.push(['co_alarms_checked','CO alarms checked','checkbox']);
+    fields.push(['verified','I have checked this certificate','checkbox']);
+    return fields;
+  }
   const mntTitles={create:'Add job',update:'Edit job',complete:'Mark completed',done:'Mark done'};
   const ccFields=[['type','Type','select'],['status','Status','select'],['due_date','Due date','date'],['period_start','Period start','date'],
     ['period_end','Period end','date'],['action_date','Action date','date'],['completed_date','Completed date','date'],
@@ -149,8 +167,10 @@
           if(current&&!choices.includes(current))choices.unshift(current);
           if(!current)choices.unshift('');
           for(const choice of choices){const o=add(control,'option',choice?words(choice):'Not recorded');o.value=choice;if(choice===current)o.selected=true;}}
-        else {control=add(wrap,'input');control.type=kind==='date'?'date':'text';if(kind==='money'||kind==='rate')control.setAttribute('inputmode','decimal');}
-        control.name=name;control.setAttribute('name',name);control.value=current;
+        else if(kind==='checkbox'){wrap.className='field check';control=add(wrap,'input');control.type='checkbox';control.checked=current==='true';}
+        else {control=add(wrap,'input');control.type=kind==='date'?'date':'text';if(kind==='money'||kind==='rate')control.setAttribute('inputmode','decimal');
+          if(kind==='number')control.setAttribute('inputmode','numeric');}
+        control.name=name;control.setAttribute('name',name);if(kind!=='checkbox')control.value=current;
       }
       const actions=add(f,'div',undefined,'actions');
       const save=add(actions,'button',quick.saving?'Saving…':'Save','button');save.type='submit';save.disabled=quick.saving===true;save.setAttribute('data-mutation',quick.kind+'-update');
@@ -228,7 +248,8 @@
         if(r.level)badge(top,r.level);else add(top,'span',words(r.status),'badge neutral');add(top,'span',words(r.compliance_type),'item-scope');
         add(li,'p',r.expiry_date?'Expiry '+date(r.expiry_date)+(r.days_to_expiry!==null?' · '+expiryText(r.days_to_expiry):''):'No expiry date recorded','subtext');
         if(r.renewal_status)add(li,'p','Renewal '+words(r.renewal_status).toLowerCase(),'subtext');
-        {const row=add(li,'div',undefined,'actions start');quickButton(row,'Renewal status','renewal',r.compliance_id);}}}
+        {const row=add(li,'div',undefined,'actions start');if(['current','pending'].includes(r.status))quickButton(row,'Renew','renew',r.compliance_id);
+          quickButton(row,'Renewal status','renewal',r.compliance_id);}}}
       const repairs=card(grid,'Maintenance');
       {const link=add(repairs.head,'a','All');link.href='#maintenance';link.setAttribute('data-filter-property',item.property_id);}
       const jobs=[...mine(d.maintenance.groups.open),...mine(d.maintenance.groups.recurring)];
@@ -399,7 +420,9 @@
         add(row,'p',who.join(' · '),'subtext');
         const alarms=[r.smoke_alarms_checked===true?'Smoke alarms checked':'',r.co_alarms_checked===true?'CO alarms checked':''].filter(Boolean);
         if(alarms.length)add(row,'p',alarms.join(' · '),'subtext');
-        if(r.group!=='history'){const actions=add(row,'div',undefined,'actions start');quickButton(actions,'Renewal status','renewal',r.compliance_id);}
+        if(r.group!=='history'){const actions=add(row,'div',undefined,'actions start');
+          if(['current','pending'].includes(r.status))quickButton(actions,'Renew','renew',r.compliance_id);
+          quickButton(actions,'Renewal status','renewal',r.compliance_id);}
       };
       const grid=add(main,'div',undefined,'grid');
       const section=(name,title,records,closed)=>{
@@ -504,7 +527,7 @@
       doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
       const timing=doc.getElementById('timing');if(timing)timing.textContent=all?timingText(all):'';
       const title=doc.getElementById('screen-title');
-      if(title)title.textContent=form?(form.quick?form.title:form.kind==='maintenance'?mntTitles[form.mode]:
+      if(title)title.textContent=form?(form.quick?form.shortTitle||form.title:form.kind==='maintenance'?mntTitles[form.mode]:
         form.mode==='create'?'Add record':'Edit record'):page()==='property'?route().propertyId:titles[page()]||'Home';
       const refresh=doc.getElementById('refresh');
       if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
@@ -608,6 +631,12 @@
         rent:()=>{const t=item.details.tenancy;return {title:'Update rent',subtitle:item.property_id+' · '+t.tenancy_id,fields:rentFields,action:'tenancy.update',idField:'tenancy_id',
           record:{id:t.tenancy_id,version:t.version},values:{monthly_rent:str(t.monthly_rent),current_rent_effective_date:str(t.current_rent_effective_date),
             last_rent_increase_date:str(t.last_rent_increase_date),next_rent_review_date:str(t.next_rent_review_date)}};},
+        renew:id=>{const r=[...complianceData.groups.due,...complianceData.groups.current].find(x=>x.compliance_id===id);
+          const values=Object.fromEntries(renewAll.map(f=>[f,'']));
+          Object.assign(values,{provider:str(r.provider),potential_energy_rating:str(r.potential_energy_rating),potential_energy_score:str(r.potential_energy_score)});
+          return {title:'Renew certificate',shortTitle:'Renew',subtitle:[r.property_id,words(r.compliance_type),r.expiry_date?'expires '+date(r.expiry_date):''].filter(Boolean).join(' · '),
+            fields:renewFieldsFor(r.compliance_type),choices:complianceData.choices,action:'compliance.renew',idField:'compliance_id',
+            record:{id:r.compliance_id,version:r.version},values};},
         renewal:id=>{const r=[...complianceData.groups.due,...complianceData.groups.current,...complianceData.groups.history].find(x=>x.compliance_id===id);
           return {title:'Renewal status',subtitle:[r.property_id,words(r.compliance_type),r.expiry_date?'expiry '+date(r.expiry_date):''].filter(Boolean).join(' · '),
             fields:renewalFields,choices:complianceData.choices,action:'compliance.update',idField:'compliance_id',record:{id:r.compliance_id,version:r.version},
@@ -623,7 +652,7 @@
       if(element)element.addEventListener('submit',event=>{
         event.preventDefault();if(!form||form.saving)return;
         const current=form,values={...current.values};
-        for(const field of element.querySelectorAll('[name]'))values[field.getAttribute('name')]=String(field.value||'');
+        for(const field of element.querySelectorAll('[name]'))values[field.getAttribute('name')]=field.type==='checkbox'?(field.checked?'true':'false'):String(field.value||'');
         current.values=values;
         send(current,current.action,{request_id:current.request_id,fields:values,expected_version:current.record.version,[current.idField]:current.record.id});
       });
