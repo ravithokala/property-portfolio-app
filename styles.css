@@ -36,6 +36,7 @@ main:focus,main:focus-visible{outline:none}
 .menu-button{color:var(--green);font-weight:600}.menu-button.danger{color:#a8322a}
 .list>li.attn-item{padding:0}.attn{display:flex;align-items:center;gap:10px;padding:11px 0;color:var(--ink);text-decoration:none;min-height:44px}
 .attn-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.attn-title{font-weight:600;font-size:.95rem;overflow-wrap:anywhere}.attn-sub{font-size:.8rem;color:var(--muted)}
+.month-heading{font-size:.78rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:14px 0 2px}.card-head+.month-heading{margin-top:0}
 .attn-pill{flex:none;font-size:.75rem;font-weight:650;border-radius:20px;padding:4px 10px;white-space:nowrap}
 .menu-icon.ok{background:#e4eee7;color:var(--green)}.menu-icon.fail{background:#f6e3e1;color:#a8322a}.menu-row:disabled{cursor:progress;opacity:.75}
 .version{text-align:center}

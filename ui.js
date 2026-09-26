@@ -23,6 +23,8 @@
   const words=value=>typeof value==='string'&&value?(acronyms[value]||value.charAt(0).toUpperCase()+value.slice(1).replace(/-/g,' ')):'Not recorded';
   // Company compliance form fields, in display order (dates as YYYY-MM-DD text).
   // Days from the server's canonical assessment only; the browser never works out deadlines.
+  // Coming up: days while close, then whole months ("in 4 months").
+  const aheadText=days=>days<=60?dayText(days):'in '+Math.round(days/30.4)+' months';
   const dayText=days=>typeof days!=='number'?'':days<0?(-days)+(days===-1?' day':' days')+' overdue':days===0?'today':'in '+days+(days===1?' day':' days');
   // Expiry wording from the server's day count.
   const expiryText=days=>typeof days!=='number'?'':days<0?'expired '+(-days)+(days===-1?' day':' days')+' ago':days===0?'expires today':'in '+days+(days===1?' day':' days');
@@ -546,6 +548,23 @@
       return;
     }
     const full=page==='attention',data=response.data,attentionData=full?data:data.attention;
+    // One dated item: title, then where · what · when, and a countdown pill (severity colour for
+    // attention items, quiet for Coming up). Opens the property page or Company compliance.
+    const dateRow=(row,item,severity)=>{
+      row.className='attn-item';
+      const link=add(row,'a',undefined,'attn');
+      link.href=item.property==='Company'?'#company':'#property/'+encodeURIComponent(item.property);
+      const text=add(link,'span',undefined,'attn-text');
+      add(text,'span',item.title_code?words(item.title):item.title,'attn-title');
+      const when=[item.note,item.date?date(item.date):''].filter(Boolean).join(' ');
+      add(text,'span',[item.property,when].filter(Boolean).join(' · '),'attn-sub');
+      const level=severity&&Object.hasOwn(labels,item.level)?item.level:'neutral';
+      if(typeof item.days==='number'){const pill=add(link,'span',undefined,'attn-pill '+level);
+        if(severity)add(pill,'span',labels[level]+': ','sr-only');add(pill,'span',severity?dayText(item.days):aheadText(item.days));}
+      else if(level!=='neutral')add(link,'span',labels[level],'attn-pill '+level);
+      add(link,'span','›','menu-chevron').setAttribute('aria-hidden','true');
+    };
+    const comingUp=(parent,items)=>{const ul=list(parent);for(const item of items)dateRow(add(ul,'li'),item,false);};
     heading(full?'Attention':'What needs attention?');
     // Severity counters first: the whole picture in one row.
     const counters=add(main,'div',undefined,'counters');counters.setAttribute('aria-label','Attention by severity');
@@ -567,31 +586,32 @@
         if(full&&item.relevant_date)add(row,'p','Date '+date(item.relevant_date),'subtext');
         continue;
       }
-      // Title, then where · what · when; the countdown pill carries the severity colour.
-      row.className='attn-item';
-      const link=add(row,'a',undefined,'attn');
-      link.href=item.property==='Company'?'#company':'#property/'+encodeURIComponent(item.property);
-      const text=add(link,'span',undefined,'attn-text');
-      add(text,'span',item.title_code?words(item.title):item.title,'attn-title');
-      const when=[item.note,item.date?date(item.date):''].filter(Boolean).join(' ');
-      add(text,'span',[item.property,when].filter(Boolean).join(' · '),'attn-sub');
-      const level=Object.hasOwn(labels,item.level)?item.level:'neutral';
-      if(typeof item.days==='number'){const pill=add(link,'span',undefined,'attn-pill '+level);
-        add(pill,'span',labels[level]+': ','sr-only');add(pill,'span',dayText(item.days));}
-      else if(level!=='neutral')add(link,'span',labels[level],'attn-pill '+level);
-      add(link,'span','›','menu-chevron').setAttribute('aria-hidden','true');
+      dateRow(row,item,true);
     }
-    if(full)return;
+    if(full){
+      if(Array.isArray(data.coming_up)){
+        const ahead=card(grid,'Coming up · next 6 months');
+        if(!data.coming_up.length)empty(ahead.el,'Nothing else is due in the next 6 months.');
+        const month=value=>new Intl.DateTimeFormat('en-GB',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(value+'T12:00:00.000Z'));
+        let current=null,group=[];
+        const flush=()=>{if(group.length){add(ahead.el,'h3',current,'month-heading');comingUp(ahead.el,group);}group=[];};
+        for(const item of data.coming_up){const m=month(item.date);if(m!==current){flush();current=m;}group.push(item);}
+        flush();
+      }
+      return;
+    }
     const maintenance=card(grid,'Open maintenance');
     {const link=add(maintenance.head,'a','All');link.href='#maintenance';}
     add(maintenance.el,'p',data.maintenance.follow_up_count+' follow-ups','subtext');
     if(!data.maintenance.items.length)empty(maintenance.el,'No maintenance follow-ups to show.');
     const repairs=list(maintenance.el);
     for(const item of data.maintenance.items){const row=add(repairs,'li'),top=add(row,'div',undefined,'item-top');badge(top,item.level);add(top,'span',item.property_id,'item-scope');add(row,'p',item.reason,'item-action');if(item.target_date)add(row,'p','Target '+date(item.target_date),'subtext');}
-    const upcoming=card(grid,'Upcoming dates');
-    if(!data.upcoming_dates.length)empty(upcoming.el,'No upcoming actionable dates are recorded.');
-    const dates=list(upcoming.el);
-    for(const item of data.upcoming_dates){const row=add(dates,'li',undefined,'date-row'),text=add(row,'div');add(text,'h3',item.type);add(text,'p',item.property_id||'Company','subtext');const time=add(row,'time',date(item.date));time.setAttribute('datetime',item.date);}
+    if(Array.isArray(data.coming_up)){
+      const upcoming=card(grid,'Coming up');
+      if(data.coming_up_count){const link=add(upcoming.head,'a','All '+data.coming_up_count);link.href='#attention';}
+      if(!data.coming_up.length)empty(upcoming.el,'Nothing else is due in the next 6 months.');
+      else comingUp(upcoming.el,data.coming_up);
+    }
     const portfolio=card(grid,'Portfolio snapshot'),p=data.portfolio;
     add(portfolio.head,'span',p.property_count+(p.property_count===1?' property':' properties'),'item-scope');
     const metrics=add(portfolio.el,'dl',undefined,'metrics three');
