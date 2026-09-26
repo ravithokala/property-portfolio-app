@@ -77,7 +77,8 @@
     // Never throw away a half-filled form.
     if(doc&&typeof doc.querySelector==='function'&&doc.querySelector('main form'))return false;
     let latest=null;
-    try{const response=await root.fetch('version.js',{cache:'no-store',credentials:'omit'});
+    // A unique query so neither the browser nor GitHub's cache (up to 10 minutes) answers with an old copy.
+    try{const response=await root.fetch('version.js?t='+Date.now(),{cache:'no-store',credentials:'omit'});
       const match=/PortfolioVersion='([^'\n]{1,80})'/.exec(await response.text());latest=match&&match[1];}catch(_){return false;}
     if(!latest||latest===running)return false;
     const marker='?v='+encodeURIComponent(latest);

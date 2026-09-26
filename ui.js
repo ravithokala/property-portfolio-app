@@ -163,7 +163,7 @@
     const attaching=options.form;
     if(attaching&&attaching.kind==='attach'&&response.permissions&&response.permissions.can_write===true){
       heading('Attach document');
-      const box=card(main,'Attach '+attaching.label);
+      const box=card(main,attaching.hasCurrent?'Replace '+attaching.label+' file':'Attach '+attaching.label);
       add(box.el,'p',attaching.id,'subtext');
       if(attaching.hasCurrent)add(box.el,'p','This replaces the link to the current document. The old file stays in Google Drive.','note');
       if(attaching.message){const note=add(box.el,'p',attaching.message,'note');note.setAttribute('role','alert');}
