@@ -82,7 +82,12 @@
     if(!latest||latest===running)return false;
     const marker='?v='+encodeURIComponent(latest);
     if(root.location.search===marker)return false;
-    try{const registration=await root.navigator.serviceWorker.getRegistration();if(registration)await registration.update();}catch(_){/* reload anyway */}
+    // The new release's worker installs its cache; reload once it is in charge (at most 8 seconds).
+    try{const registration=await root.navigator.serviceWorker.getRegistration();
+      if(registration){await registration.update();const worker=registration.installing||registration.waiting;
+        if(worker&&worker.state!=='activated')await new Promise(resolve=>{const timer=root.setTimeout(resolve,8000);
+          worker.addEventListener('statechange',()=>{if(['activated','redundant'].includes(worker.state)){root.clearTimeout(timer);resolve();}});});}}
+    catch(_){/* reload anyway */}
     root.location.replace(root.location.pathname+marker+root.location.hash);
     return true;
   }
@@ -90,6 +95,8 @@
   root.addEventListener('DOMContentLoaded',()=>{
     root.PortfolioUi.mount(root.document,adapter);
     const doc=root.document;
+    // The app opens from its cached release, so check for a newer one straight away too.
+    checkForUpdate(false);
     if(doc&&typeof doc.addEventListener==='function')doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')checkForUpdate(false);});
     const refresh=doc&&typeof doc.getElementById==='function'?doc.getElementById('refresh'):null;
     if(refresh)refresh.addEventListener('click',()=>checkForUpdate(true));

@@ -2,7 +2,7 @@
    persistence, finance or deadline rules: it draws what the server's canonical projections return. */
 (function (root) {
   'use strict';
-  const pages=['home','attention','properties','finance','more','company','maintenance','compliance','property'];
+  const pages=['home','attention','portfolio','maintenance','more','company','compliance','property'];
   const labels={overdue:'Overdue',urgent:'Urgent',warning:'Warning',neutral:'Information'};
   // Plain-language messages for the codes a person can act on; everything else is generic.
   const problems={
@@ -17,7 +17,7 @@
   const gbp=value=>known(value)?new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(value):'Not available';
   const percent=value=>known(value)?new Intl.NumberFormat('en-GB',{maximumFractionDigits:2}).format(value)+'%':'Not available';
   // Which server answer each screen draws; More only needs permissions from any answer.
-  const dataKinds={home:'home',attention:'attention',properties:'portfolio',finance:'portfolio',more:'more',company:'company_compliance',maintenance:'maintenance',compliance:'compliance',property:'property'};
+  const dataKinds={home:'home',attention:'attention',portfolio:'portfolio',more:'more',company:'company_compliance',maintenance:'maintenance',compliance:'compliance',property:'property'};
   // Acronyms stay upper case (EPC, EICR, CO); other values read as words.
   const acronyms={epc:'EPC',eicr:'EICR',co:'CO'};
   const words=value=>typeof value==='string'&&value?(acronyms[value]||value.charAt(0).toUpperCase()+value.slice(1).replace(/-/g,' ')):'Not recorded';
@@ -102,7 +102,7 @@
     return ['Updated '+updatedAt(response.observed_at),s(t.total_ms),
       typeof t.server_ms==='number'?'server '+s(t.server_ms)+(typeof t.sheets_ms==='number'?' (sheets '+s(t.sheets_ms)+')':''):''].filter(Boolean).join(' · ');
   }
-  const titles={home:'Home',attention:'Attention',properties:'Properties',finance:'Finance',more:'More',company:'Company compliance',maintenance:'Maintenance',compliance:'Compliance',property:'Property'};
+  const titles={home:'Home',attention:'Attention',portfolio:'Portfolio',more:'More',company:'Company compliance',maintenance:'Maintenance',compliance:'Compliance',property:'Property'};
   const code=response=>response&&response.error&&typeof response.error.code==='string'?response.error.code:null;
   // options: {canSignOut, version}. page 'attention' expects the full Attention response.
   function render(doc,main,response,page='home',loading=false,options={}) {
@@ -220,25 +220,10 @@
       const el=button(parent,text,'data-quick');el.setAttribute('data-quick',kind);if(id)el.setAttribute('data-quick-id',id);el.className='button small';el.setAttribute('data-mutation',kind+'-update');}};
     const metricList=(parent,entries)=>{const dl=add(parent,'dl',undefined,'metrics');for(const [label,value] of entries){const m=add(dl,'div');add(m,'dt',label);add(m,'dd',value);}return dl;};
     const levelBadge=(parent,attention)=>attention.count?badge(parent,attention.level):add(parent,'span','Nothing to review','badge neutral');
-    if(page==='properties'){
-      // A compact summary per property; tapping one opens its page.
-      const items=response.data.properties;
-      heading('Properties');
-      const grid=add(main,'div',undefined,'grid');
-      if(!items.length)empty(card(grid,'Properties').el,'No properties are recorded.');
-      for(const item of items){
-        const link=add(grid,'a',undefined,'card link-card');link.href='#property/'+encodeURIComponent(item.property_id);
-        const head=add(link,'div',undefined,'card-head');add(head,'h2',item.property_id);levelBadge(head,item.attention.total);
-        add(link,'p',recorded(item.address),'subtext');
-        add(link,'p',[gbp(item.current_value),'LTV '+percent(item.finance.ltv),'Rent '+gbp(item.tenancy.monthly_rent)+'/m'].join(' · '),'item-action');
-        add(link,'span','›','chevron').setAttribute('aria-hidden','true');
-      }
-      return;
-    }
     if(page==='property'){
       const d=response.data,item=d.portfolio.properties.find(p=>p.property_id===options.propertyId);
       const canWrite=response.permissions.can_write===true,form=options.form;
-      if(!item){heading('Property');const box=card(main,'Property not found','placeholder');add(box.el,'p','This property is not in the portfolio.');const back=add(box.el,'a','Back to Properties','button');back.href='#properties';return;}
+      if(!item){heading('Property');const box=card(main,'Property not found','placeholder');add(box.el,'p','This property is not in the portfolio.');const back=add(box.el,'a','Back to Portfolio','button');back.href='#portfolio';return;}
       const details=item.details||{},t=details.tenancy,m=details.mortgage;
       heading(item.property_id);
       const grid=add(main,'div',undefined,'grid');
@@ -307,12 +292,13 @@
         add(li,'p',r.description||'No description','item-action');
         const due=r.group==='recurring'?(r.next_due_date?'Next due '+date(r.next_due_date):'Next due date missing'):(r.target_date?'Target '+date(r.target_date):'');
         if(due)add(li,'p',due+(r.days!==null?' · '+dayText(r.days):''),'subtext');}}
-      const back=add(main,'a','Back to Properties','button back-link');back.href='#properties';
+      const back=add(main,'a','Back to Portfolio','button back-link');back.href='#portfolio';
       return;
     }
-    if(page==='finance'){
+    // Portfolio: totals, then one card per property (tap for its page). Replaces Properties and Finance.
+    if(page==='portfolio'){
       const t=response.data.totals;
-      heading('Finance');
+      heading('Portfolio');
       const grid=add(main,'div',undefined,'grid');
       const total=card(grid,'Portfolio finance','attention-card');
       metricList(total.el,[['Current property value',gbp(t.total_current_property_value)],['Mortgage exposure',gbp(t.total_current_mortgage_balance)],
@@ -323,8 +309,11 @@
       add(total.el,'p','Cashflow is rent minus mortgage payments, before operating expenses — not profit.','note');
       if(!t.complete)add(total.el,'p','Incomplete finance data. Unknown values are not treated as zero.','note');
       for(const item of response.data.properties){
-        const box=card(grid,item.property_id);
-        metricList(box.el,[['Rent per month',gbp(item.tenancy.monthly_rent)],['Mortgage payment (interest) per month',gbp(item.mortgage.monthly_payment)],
+        const box={el:add(grid,'a',undefined,'card link-card')};box.el.href='#property/'+encodeURIComponent(item.property_id);
+        const head=add(box.el,'div',undefined,'card-head');add(head,'h2',item.property_id);levelBadge(head,item.attention.total);
+        add(box.el,'p',recorded(item.address),'subtext');
+        add(box.el,'span','›','chevron').setAttribute('aria-hidden','true');
+        metricList(box.el,[['Value',gbp(item.current_value)],['Rent per month',gbp(item.tenancy.monthly_rent)],['Mortgage payment (interest) per month',gbp(item.mortgage.monthly_payment)],
           ['Cashflow per month',gbp(item.finance.monthly_cashflow_before_operating_expenses)],['LTV',percent(item.finance.ltv)],
           ['Principal repaid',gbp(item.finance.principal_repaid_total)],['Principal repaid %',percent(item.finance.principal_repaid_pct)]]);
       }
@@ -508,11 +497,9 @@
       };
       const lists=add(main,'section',undefined,'card menu');lists.setAttribute('aria-label','Portfolio lists');
       add(lists,'h2','Portfolio','menu-heading');
-      const c=d.compliance&&d.compliance.groups,m=d.maintenance&&d.maintenance.groups,cc=d.company_compliance&&d.company_compliance.records;
+      const c=d.compliance&&d.compliance.groups,cc=d.company_compliance&&d.company_compliance.records;
       row(lists,'#compliance','✓','Compliance',c?(c.due.length?plural(c.due.length,'needs renewal','need renewal')+' · ':'')+plural(c.current.length,'current','current'):'',
         c?worst(c.due.map(r=>r.level)):null);
-      row(lists,'#maintenance','⚒','Maintenance',m?plural(m.open.length,'open job','open jobs')+' · '+plural(m.recurring.length,'recurring','recurring'):'',
-        m?worst(m.open.concat(m.recurring).map(r=>r.level)):null);
       const pending=cc?cc.filter(r=>r.status==='pending').length:0;
       row(lists,'#company','◧','Company compliance',cc?(pending?plural(pending,'pending','pending'):'Nothing pending'):'',
         worst(((d.attention&&d.attention.items)||[]).filter(i=>i.category==='Company compliance').map(i=>i.level)));
@@ -638,6 +625,7 @@
     // '#property/<property_id>' opens one property's page; other hashes name a screen.
     const route=()=>{const hash=root.location.hash.slice(1),match=/^property\/(.+)$/.exec(hash);
       if(match){let id;try{id=decodeURIComponent(match[1]);}catch(_){id='';}return {page:'property',propertyId:id};}
+      if(hash==='properties'||hash==='finance')return {page:'portfolio',propertyId:null};
       return {page:pages.includes(hash)&&hash!=='property'?hash:'home',propertyId:null};};
     const page=()=>route().page;
     const options={canSignOut:typeof adapter.signOut==='function',canSignOutEverywhere:typeof adapter.signOutEverywhere==='function',
@@ -651,7 +639,7 @@
       const kind=dataKinds[page()]||'home';
       // A property page draws from several parts of the one answer.
       // More shows a status line for each list, from the same answer.
-      if(kind==='more')return {...all,warnings:[],data:{compliance:all.data.compliance,maintenance:all.data.maintenance,
+      if(kind==='more')return {...all,warnings:[],data:{compliance:all.data.compliance,
         company_compliance:all.data.company_compliance,attention:all.data.attention}};
       if(kind==='property')return {...all,warnings:[],data:{portfolio:all.data.portfolio,compliance:all.data.compliance,maintenance:all.data.maintenance}};
       return {...all,warnings:kind==='home'?all.warnings:[],data:all.data[kind]};
@@ -668,7 +656,7 @@
         form.mode==='create'?'Add record':'Edit record'):page()==='property'?route().propertyId:titles[page()]||'Home';
       const refresh=doc.getElementById('refresh');
       if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
-      const tab=['company','maintenance','compliance'].includes(page())?'more':page()==='property'?'properties':page();
+      const tab=['company','compliance'].includes(page())?'more':page()==='property'?'portfolio':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
       options.form=form;options.propertyFilter=propertyFilter;options.slow=slow;options.propertyId=route().propertyId;options.health=health;
       render(doc,main,response,page(),loading,options);

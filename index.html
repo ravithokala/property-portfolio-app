@@ -13,6 +13,9 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="styles.css">
+  <!-- Open the connections to the API (and its redirect) while the page loads. -->
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <script src="https://accounts.google.com/gsi/client" async></script>
   <script defer src="config.js"></script>
   <script defer src="version.js"></script>
@@ -33,8 +36,8 @@
   <nav class="navigation" aria-label="Main navigation">
     <a href="#home" data-page="home"><span aria-hidden="true">⌂</span>Home</a>
     <a href="#attention" data-page="attention"><span aria-hidden="true">≡</span>Attention</a>
-    <a href="#properties" data-page="properties"><span aria-hidden="true">▦</span>Properties</a>
-    <a href="#finance" data-page="finance"><span aria-hidden="true">£</span>Finance</a>
+    <a href="#portfolio" data-page="portfolio"><span aria-hidden="true">£</span>Portfolio</a>
+    <a href="#maintenance" data-page="maintenance"><span aria-hidden="true">⚒</span>Maintenance</a>
     <a href="#more" data-page="more"><span aria-hidden="true">•••</span>More</a>
   </nav>
 </body>
