@@ -51,6 +51,7 @@
       gis().prompt();
     },
     openDocument:async(tab,id,field)=>api?api.openDocument(tab,id,field):{ok:false,error:{code:'NOT_CONFIGURED'}},
+    checkHealth:async()=>api?api.health():{ok:false,error:{code:'NOT_CONFIGURED'}},
     signOutEverywhere:async()=>{const result=api?await api.signOutEverywhere():{ok:false,error:{code:'NOT_CONFIGURED'}};const id=gis();if(id&&result.ok)id.disableAutoSelect();return result;},
     async renderSignIn(host,done) {
       afterSignIn=done;

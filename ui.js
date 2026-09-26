@@ -523,6 +523,25 @@
       add(whoText,'span',response.permissions&&response.permissions.can_write?'You can add and edit records':'You can view everything; editing is off','menu-status');
       if(options.canSignOut){const out=button(account,'Sign out','data-signout');out.className='menu-row menu-button';}
       if(options.canSignOutEverywhere){const all=button(account,'Sign out all devices','data-signout-all');all.className='menu-row menu-button danger';}
+      // System check (editor only): the server's read-only checks, one line each.
+      if(options.canCheckHealth&&response.permissions&&response.permissions.can_write){
+        const system=add(main,'section',undefined,'card menu');system.setAttribute('aria-label','System');
+        add(system,'h2','System','menu-heading');
+        const h=options.health||{},r=h.result,checks=r&&r.ok&&r.data&&Array.isArray(r.data.checks)?r.data.checks:null;
+        const failed=checks?checks.filter(c=>!c.ok).length:0;
+        const status=h.running?'Checking… this can take up to a minute':checks?(failed?failed+' of '+checks.length+' checks failed':'All '+checks.length+' checks passed'+
+          (typeof r.data.ms==='number'?' · '+(r.data.ms/1000).toFixed(1)+' s':'')):r?'Could not run the check. Reference: '+(code(r)&&/^[A-Z_]{1,40}$/.test(code(r))?code(r):'UNKNOWN'):
+          'Checks the workbook, documents folder, Google sign-in and sessions';
+        const run=add(system,'button',undefined,'menu-row');run.type='button';run.setAttribute('data-health','true');if(h.running)run.disabled=true;
+        add(run,'span','⚙','menu-icon').setAttribute('aria-hidden','true');
+        const text=add(run,'span',undefined,'menu-text');add(text,'span',checks?'Run the system check again':'Run system check','menu-title');
+        add(text,'span',status,'menu-status').setAttribute('role','status');
+        if(checks)for(const c of checks){
+          const line=add(system,'div',undefined,'menu-row static');
+          add(line,'span',c.ok?'✓':'✕','menu-icon '+(c.ok?'ok':'fail')).setAttribute('aria-label',c.ok?'Passed':'Failed');
+          const t=add(line,'span',undefined,'menu-text');add(t,'span',String(c.name),'menu-title');add(t,'span',String(c.detail),'menu-status');
+        }
+      }
       if(typeof options.version==='string')add(main,'p','Version '+options.version,'version');
       return;
     }
@@ -583,7 +602,10 @@
       if(match){let id;try{id=decodeURIComponent(match[1]);}catch(_){id='';}return {page:'property',propertyId:id};}
       return {page:pages.includes(hash)&&hash!=='property'?hash:'home',propertyId:null};};
     const page=()=>route().page;
-    const options={canSignOut:typeof adapter.signOut==='function',canSignOutEverywhere:typeof adapter.signOutEverywhere==='function',version:adapter.version,form:null,propertyFilter:''};
+    const options={canSignOut:typeof adapter.signOut==='function',canSignOutEverywhere:typeof adapter.signOutEverywhere==='function',
+      canCheckHealth:typeof adapter.checkHealth==='function',version:adapter.version,form:null,propertyFilter:''};
+    // The last System check on More (memory only): null, {running:true} or {result}.
+    let health=null;
     // Each screen's answer is the matching part of 'all', in the shape its own action returns.
     function current(){
       if(problem)return problem;
@@ -610,7 +632,7 @@
       if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
       const tab=['company','maintenance','compliance'].includes(page())?'more':page()==='property'?'properties':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
-      options.form=form;options.propertyFilter=propertyFilter;options.slow=slow;options.propertyId=route().propertyId;
+      options.form=form;options.propertyFilter=propertyFilter;options.slow=slow;options.propertyId=route().propertyId;options.health=health;
       render(doc,main,response,page(),loading,options);
       wireCompany(response);
       wireMaintenance(response);
@@ -624,6 +646,7 @@
       wireDocuments();
       wireAttach();
       const everywhere=main.querySelector('[data-signout-all]');if(everywhere)everywhere.addEventListener('click',signOutEverywhere);
+      const healthButton=main.querySelector('[data-health]');if(healthButton)healthButton.addEventListener('click',checkHealth);
       const host=main.querySelector('[data-signin]');if(host&&adapter.renderSignIn)adapter.renderSignIn(host,reload);
     }
     // With data already shown, a refresh keeps it on screen and only the header says "Updating…".
@@ -838,8 +861,16 @@
         'Not saved. Reference: '+(typeof code==='string'&&/^[A-Z_]{1,40}$/.test(code)?code:'UNKNOWN');
       paint();
     }
+    async function checkHealth(){
+      if(health&&health.running)return;
+      const current=health={running:true};paint();
+      let result;
+      try{result=await adapter.checkHealth();}catch(_){result={ok:false,error:{code:'OFFLINE'}};}
+      if(health!==current)return;
+      health={result};paint();
+    }
     function reload(){return load();}
-    function reset(){all=null;problem=null;return load();}
+    function reset(){all=null;problem=null;health=null;return load();}
     async function signOut(){try{await adapter.signOut();}catch(_){}return reset();}
     // Every device signed in with this account signs out (a lost phone); asks first.
     async function signOutEverywhere(){

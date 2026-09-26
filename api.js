@@ -86,6 +86,16 @@
         if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
         return result;
       },
+      // System check on More (editor only, read-only on the server).
+      async health() {
+        const session=read();
+        if(!session)return failure('UNAUTHENTICATED');
+        let result;
+        try{result=await post({action:'health',session});}catch(_){return failure('OFFLINE');}
+        delete result.server_ms;delete result.sheets_ms;
+        if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
+        return result;
+      },
       // Ends every session of this account (e.g. a lost phone), then this device's key.
       async signOutEverywhere() {
         const session=read();
