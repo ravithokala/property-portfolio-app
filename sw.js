@@ -3,12 +3,20 @@
    A release opens from its own cache, filled completely when this worker installs, so the app does
    not wait for GitHub on every open. version.js always goes to the network: it is how app.js
    notices a new release, which installs a new worker and cache before the page reloads onto it. */
-const VERSION='shell-45ab00d-868df43a72d4';
+const VERSION='shell-e79abe1-b903bc8bad5e';
 const SHELL=['./','index.html','styles.css','config.js','version.js','ui.js','api.js','app.js',
   'manifest.webmanifest','icons/icon.svg','icons/icon-192.png','icons/apple-touch-icon.png'];
 
+// Every file comes from GitHub, never from the browser's own cache (which may hold the previous release
+// for up to 10 minutes), and a release refuses to install if its version.js is not its own.
 self.addEventListener('install',event=>{
-  event.waitUntil(caches.open(VERSION).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting()));
+  event.waitUntil(caches.open(VERSION)
+    .then(cache=>cache.addAll(SHELL.map(url=>new Request(url,{cache:'reload'}))).then(()=>cache.match('version.js')))
+    .then(async response=>{
+      const commit=/^shell-([0-9a-f]{7,40})-[0-9a-f]{12}$/.exec(VERSION);
+      if(commit&&!(response&&(await response.text()).includes('· '+commit[1]+"'")))throw Error('stale release files');
+    })
+    .then(()=>self.skipWaiting()));
 });
 
 self.addEventListener('activate',event=>{

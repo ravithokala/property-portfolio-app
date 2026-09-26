@@ -81,8 +81,17 @@
     try{const response=await root.fetch('version.js?t='+Date.now(),{cache:'no-store',credentials:'omit'});
       const match=/PortfolioVersion='([^'\n]{1,80})'/.exec(await response.text());latest=match&&match[1];}catch(_){return false;}
     if(!latest||latest===running)return false;
-    const marker='?v='+encodeURIComponent(latest);
-    if(root.location.search===marker)return false;
+    const marker='?v='+encodeURIComponent(latest),fresh=marker+'&fresh=1';
+    if(root.location.search===fresh)return false;
+    // Already reloaded for this release but still running an older copy: the phone's copy is stale.
+    // Once: drop the app's caches and worker and load straight from GitHub.
+    if(root.location.search===marker){
+      try{if(root.caches){const keys=await root.caches.keys();await Promise.all(keys.map(key=>root.caches.delete(key)));}
+        const registration=await root.navigator.serviceWorker.getRegistration();if(registration)await registration.unregister();}
+      catch(_){/* reload anyway */}
+      root.location.replace(root.location.pathname+fresh+root.location.hash);
+      return true;
+    }
     // The new release's worker installs its cache; reload once it is in charge (at most 8 seconds).
     try{const registration=await root.navigator.serviceWorker.getRegistration();
       if(registration){await registration.update();const worker=registration.installing||registration.waiting;
