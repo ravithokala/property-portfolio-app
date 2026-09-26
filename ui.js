@@ -184,6 +184,7 @@
       heading(quick.title);
       const box=card(main,quick.title);
       if(quick.subtitle)add(box.el,'p',quick.subtitle,'subtext');
+      if(quick.explain)add(box.el,'p',quick.explain);
       if(quick.issues&&quick.issues.length){const alert=add(box.el,'div',undefined,'note');alert.setAttribute('role','alert');
         add(alert,'p','Please fix:');const ul=add(alert,'ul');for(const issue of quick.issues)add(ul,'li',issue);}
       if(quick.message){const note=add(box.el,'p',quick.message,'note');note.setAttribute('role','alert');}
@@ -203,7 +204,7 @@
         control.name=name;control.setAttribute('name',name);if(kind!=='checkbox')control.value=current;
       }
       const actions=add(f,'div',undefined,'actions');
-      const save=add(actions,'button',quick.saving?'Saving…':'Save','button');save.type='submit';save.disabled=quick.saving===true;save.setAttribute('data-mutation',quick.kind+'-update');
+      const save=add(actions,'button',quick.saving?'Saving…':quick.saveLabel||'Save','button');save.type='submit';save.disabled=quick.saving===true;save.setAttribute('data-mutation',quick.kind+'-update');
       button(actions,'Cancel','data-quick-cancel');
       return;
     }
@@ -281,7 +282,8 @@
         if(r.renewal_status)add(li,'p','Renewal '+words(r.renewal_status).toLowerCase(),'subtext');
         {const docs=add(li,'div',undefined,'actions start');docButton(docs,'Open certificate','Compliance',r.compliance_id,'document',r.document);
           attachButton(docs,'Attach certificate','Compliance',r.compliance_id,'document',r.version,r.document);}
-        {const row=add(li,'div',undefined,'actions start');if(['current','pending'].includes(r.status))quickButton(row,'Renew','renew',r.compliance_id);
+        {const row=add(li,'div',undefined,'actions start');if(r.status==='pending')quickButton(row,'Make current','activate',r.compliance_id);
+          else if(r.status==='current')quickButton(row,'Renew','renew',r.compliance_id);
           quickButton(row,'Renewal status','renewal',r.compliance_id);}}}
       const repairs=card(grid,'Maintenance');
       {const link=add(repairs.head,'a','All');link.href='#maintenance';link.setAttribute('data-filter-property',item.property_id);}
@@ -466,7 +468,8 @@
         {const docs=add(row,'div',undefined,'actions start');docButton(docs,'Open certificate','Compliance',r.compliance_id,'document',r.document);
           if(r.group!=='history')attachButton(docs,'Attach certificate','Compliance',r.compliance_id,'document',r.version,r.document);}
         if(r.group!=='history'){const actions=add(row,'div',undefined,'actions start');
-          if(['current','pending'].includes(r.status))quickButton(actions,'Renew','renew',r.compliance_id);
+          if(r.status==='pending')quickButton(actions,'Make current','activate',r.compliance_id);
+          else if(r.status==='current')quickButton(actions,'Renew','renew',r.compliance_id);
           quickButton(actions,'Renewal status','renewal',r.compliance_id);}
       };
       const grid=add(main,'div',undefined,'grid');
@@ -772,9 +775,16 @@
         renew:id=>{const r=[...complianceData.groups.due,...complianceData.groups.current].find(x=>x.compliance_id===id);
           const values=Object.fromEntries(renewAll.map(f=>[f,'']));
           Object.assign(values,{provider:str(r.provider),potential_energy_rating:str(r.potential_energy_rating),potential_energy_score:str(r.potential_energy_score)});
-          return {title:'Renew certificate',shortTitle:'Renew',subtitle:[r.property_id,words(r.compliance_type),r.expiry_date?'expires '+date(r.expiry_date):''].filter(Boolean).join(' · '),
+          return {title:'Renew certificate',shortTitle:'Renew',explain:['insurance','other'].includes(r.compliance_type)?
+              'Renewing before the start date? The new record waits as pending, this one stays current (marked arranged), and you tap Make current when it starts.':'',subtitle:[r.property_id,words(r.compliance_type),r.expiry_date?'expires '+date(r.expiry_date):''].filter(Boolean).join(' · '),
             fields:renewFieldsFor(r.compliance_type),choices:complianceData.choices,action:'compliance.renew',idField:'compliance_id',
             record:{id:r.compliance_id,version:r.version},values};},
+        activate:id=>{const r=[...complianceData.groups.due,...complianceData.groups.current].find(x=>x.compliance_id===id);
+          const now=[...complianceData.groups.due,...complianceData.groups.current].find(x=>x.status==='current'&&x.property_id===r.property_id&&x.compliance_type===r.compliance_type);
+          const start=r.effective_date||r.inspection_date||r.issue_date;
+          return {title:'Make current',subtitle:[r.property_id,words(r.compliance_type),r.compliance_id,start?'starts '+date(start):'',r.expiry_date?'expires '+date(r.expiry_date):''].filter(Boolean).join(' · '),
+            explain:now?now.compliance_id+(now.expiry_date?' (expires '+date(now.expiry_date)+')':'')+' will be marked superseded and moved to Earlier.':'There is no current record of this type to replace.',
+            saveLabel:'Make current',fields:[],action:'compliance.activate',idField:'compliance_id',record:{id:r.compliance_id,version:r.version},values:{}};},
         renewal:id=>{const r=[...complianceData.groups.due,...complianceData.groups.current,...complianceData.groups.history].find(x=>x.compliance_id===id);
           return {title:'Renewal status',subtitle:[r.property_id,words(r.compliance_type),r.expiry_date?'expiry '+date(r.expiry_date):''].filter(Boolean).join(' · '),
             fields:renewalFields,choices:complianceData.choices,action:'compliance.update',idField:'compliance_id',record:{id:r.compliance_id,version:r.version},
