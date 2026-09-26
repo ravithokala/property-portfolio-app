@@ -233,7 +233,7 @@
       asLink(docButton(row,'Open '+docWord(r.compliance_type),'Compliance',r.compliance_id,'document',r.document));
       // Attach when there is no document; a quiet Replace link when there is.
       const attach=attachButton(row,'Attach '+docWord(r.compliance_type),'Compliance',r.compliance_id,'document',r.version,r.document);
-      if(attach&&r.document){asLink(attach);attach.textContent='Replace '+docWord(r.compliance_type);}
+      if(attach&&r.document){asLink(attach);attach.textContent='Replace file';}
       if(r.status==='current')asLink(quickButton(row,'Renewal status','renewal',r.compliance_id));
     };
     const certFacts=r=>{

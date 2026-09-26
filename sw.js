@@ -3,7 +3,7 @@
    A release opens from its own cache, filled completely when this worker installs, so the app does
    not wait for GitHub on every open. version.js always goes to the network: it is how app.js
    notices a new release, which installs a new worker and cache before the page reloads onto it. */
-const VERSION='shell-52a77da-8cb5b07ac682';
+const VERSION='shell-21b5a8c-aadbde612b22';
 const SHELL=['./','index.html','styles.css','config.js','version.js','ui.js','api.js','app.js',
   'manifest.webmanifest','icons/icon.svg','icons/icon-192.png','icons/apple-touch-icon.png'];
 
