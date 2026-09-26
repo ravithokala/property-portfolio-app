@@ -559,9 +559,27 @@
     if(!attentionData.items.length)empty(attention.el,'No items currently need attention.');
     const actions=list(attention.el);
     for(const item of attentionData.items){
-      const row=add(actions,'li'),top=add(row,'div',undefined,'item-top');badge(top,item.level);
-      add(top,'span',item.property+' · '+item.category,'item-scope');add(row,'p',item.action,'item-action');
-      if(full&&item.relevant_date)add(row,'p','Date '+date(item.relevant_date),'subtext');
+      const row=add(actions,'li');
+      // Older answers without structured text keep the original layout.
+      if(typeof item.title!=='string'){
+        const top=add(row,'div',undefined,'item-top');badge(top,item.level);
+        add(top,'span',item.property+' · '+item.category,'item-scope');add(row,'p',item.action,'item-action');
+        if(full&&item.relevant_date)add(row,'p','Date '+date(item.relevant_date),'subtext');
+        continue;
+      }
+      // Title, then where · what · when; the countdown pill carries the severity colour.
+      row.className='attn-item';
+      const link=add(row,'a',undefined,'attn');
+      link.href=item.property==='Company'?'#company':'#property/'+encodeURIComponent(item.property);
+      const text=add(link,'span',undefined,'attn-text');
+      add(text,'span',item.title_code?words(item.title):item.title,'attn-title');
+      const when=[item.note,item.date?date(item.date):''].filter(Boolean).join(' ');
+      add(text,'span',[item.property,when].filter(Boolean).join(' · '),'attn-sub');
+      const level=Object.hasOwn(labels,item.level)?item.level:'neutral';
+      if(typeof item.days==='number'){const pill=add(link,'span',undefined,'attn-pill '+level);
+        add(pill,'span',labels[level]+': ','sr-only');add(pill,'span',dayText(item.days));}
+      else if(level!=='neutral')add(link,'span',labels[level],'attn-pill '+level);
+      add(link,'span','›','menu-chevron').setAttribute('aria-hidden','true');
     }
     if(full)return;
     const maintenance=card(grid,'Open maintenance');
