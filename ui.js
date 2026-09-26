@@ -100,7 +100,7 @@
     if(!t||typeof t.total_ms!=='number')return '';
     const s=value=>(value/1000).toFixed(1)+' s';
     return ['Updated '+updatedAt(response.observed_at),s(t.total_ms),
-      typeof t.server_ms==='number'?'server '+s(t.server_ms)+(typeof t.sheets_ms==='number'?' (sheets '+s(t.sheets_ms)+')':''):''].filter(Boolean).join(' · ');
+      typeof t.server_ms==='number'?'server '+s(t.server_ms)+(typeof t.sheets_ms==='number'?' (sheets '+s(t.sheets_ms)+')':t.cached?' (cached)':''):''].filter(Boolean).join(' · ');
   }
   const titles={home:'Home',attention:'Attention',portfolio:'Portfolio',more:'More',company:'Company compliance',maintenance:'Maintenance',compliance:'Compliance',property:'Property'};
   const code=response=>response&&response.error&&typeof response.error.code==='string'?response.error.code:null;
@@ -737,14 +737,15 @@
       const host=main.querySelector('[data-signin]');if(host&&adapter.renderSignIn)adapter.renderSignIn(host,reload);
     }
     // With data already shown, a refresh keeps it on screen and only the header says "Updating…".
-    async function load(){const now=++generation;
+    // fresh (↻): the server reads the workbook again rather than its cached read.
+    async function load(fresh){const now=++generation;
       if(all)refreshing=true;else loading=true;
       // A first load that takes a while says so (the server can be slow to wake up).
       slow=false;if(slowTimer)root.clearTimeout(slowTimer);
       if(!all&&typeof root.setTimeout==='function')slowTimer=root.setTimeout(()=>{if(now===generation&&loading){slow=true;paint();}},8000);
       paint();
       let next;
-      try{next=await adapter.load('all',select?select.value:undefined);}
+      try{next=await adapter.load('all',select?select.value:undefined,{fresh:fresh===true});}
       catch(_){next={ok:false,error:{code:'OFFLINE'}};}
       if(now!==generation)return;
       loading=false;refreshing=false;loadedAt=Date.now();slow=false;if(slowTimer)root.clearTimeout(slowTimer);
@@ -973,7 +974,7 @@
     }
     if(select)select.addEventListener('change',reset);
     const refreshButton=doc.getElementById('refresh');
-    if(refreshButton)refreshButton.addEventListener('click',()=>{if(!loading&&!refreshing)load();});
+    if(refreshButton)refreshButton.addEventListener('click',()=>{if(!loading&&!refreshing)load(true);});
     // Coming back to the app after a while refreshes in the background.
     if(typeof doc.addEventListener==='function')doc.addEventListener('visibilitychange',()=>{
       if(doc.visibilityState==='visible'&&!loading&&!refreshing&&Date.now()-loadedAt>REFRESH_AFTER_MS)load();});

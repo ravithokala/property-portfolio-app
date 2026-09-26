@@ -28,11 +28,11 @@
   }
   const adapter={
     version:root.PortfolioVersion,
-    async load(kind) {
+    async load(kind,_scenario,options) {
       if(!api)return {ok:false,schema_version:1,error:{code:'NOT_CONFIGURED'}};
       // Show a refused sign-in once (e.g. an account that is not allowlisted), then offer sign-in again.
       if(signInProblem){const error=signInProblem;signInProblem=null;return {ok:false,schema_version:1,error};}
-      return api.load(kind);
+      return api.load(kind,options);
     },
     save:async(action,payload)=>api?api.write(action,payload):{ok:false,schema_version:1,error:{code:'NOT_CONFIGURED'}},
     newRequestId:()=>root.crypto.randomUUID(),
