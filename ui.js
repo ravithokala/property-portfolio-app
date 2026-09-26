@@ -23,8 +23,8 @@
   const words=value=>typeof value==='string'&&value?(acronyms[value]||value.charAt(0).toUpperCase()+value.slice(1).replace(/-/g,' ')):'Not recorded';
   // Company compliance form fields, in display order (dates as YYYY-MM-DD text).
   // Days from the server's canonical assessment only; the browser never works out deadlines.
-  // Coming up: days while close, then whole months ("in 4 months").
-  const aheadText=days=>days<=60?dayText(days):'in '+Math.round(days/30.4)+' months';
+  // Coming up and certificates: days while close, then months, then years ("in 4 years").
+  const aheadText=days=>days<=60?dayText(days):days<548?'in '+Math.round(days/30.4)+' months':'in '+Math.round(days/365.25)+' years';
   const dayText=days=>typeof days!=='number'?'':days<0?(-days)+(days===-1?' day':' days')+' overdue':days===0?'today':'in '+days+(days===1?' day':' days');
   // Expiry wording from the server's day count.
   const expiryText=days=>typeof days!=='number'?'':days<0?'expired '+(-days)+(days===-1?' day':' days')+' ago':days===0?'expires today':'in '+days+(days===1?' day':' days');
@@ -211,15 +211,67 @@
     // PWA.9A: opens a record's document in Google Drive (both users); shown only when a document is recorded.
     const docButton=(parent,label,tab,id,field,value)=>{if(typeof value!=='string'||!value)return;
       const el=button(parent,label,'data-open-doc');el.className='button small';
-      el.setAttribute('data-doc-tab',tab);el.setAttribute('data-doc-id',id);el.setAttribute('data-doc-field',field);};
+      el.setAttribute('data-doc-tab',tab);el.setAttribute('data-doc-id',id);el.setAttribute('data-doc-field',field);return el;};
     // PWA.9B: attach a file to a record's document field (PRIMARY only).
     const attachButton=(parent,label,tab,id,field,version,current)=>{if(!(response.permissions&&response.permissions.can_write===true)||!version)return;
       const el=button(parent,label,'data-attach');el.className='button small';el.setAttribute('data-mutation','document-attach');
-      for(const [k,v] of [['tab',tab],['id',id],['field',field],['version',version],['label',label.replace(/^Attach /,'')],['has',current?'yes':'']])el.setAttribute('data-attach-'+k,v);};
+      for(const [k,v] of [['tab',tab],['id',id],['field',field],['version',version],['label',label.replace(/^Attach /,'')],['has',current?'yes':'']])el.setAttribute('data-attach-'+k,v);return el;};
     // A small button that opens a quick edit (PRIMARY only).
     const quickButton=(parent,text,kind,id)=>{if(response.permissions&&response.permissions.can_write===true){
-      const el=button(parent,text,'data-quick');el.setAttribute('data-quick',kind);if(id)el.setAttribute('data-quick-id',id);el.className='button small';el.setAttribute('data-mutation',kind+'-update');}};
+      const el=button(parent,text,'data-quick');el.setAttribute('data-quick',kind);if(id)el.setAttribute('data-quick-id',id);el.className='button small';el.setAttribute('data-mutation',kind+'-update');return el;}return null;};
     const metricList=(parent,entries)=>{const dl=add(parent,'dl',undefined,'metrics');for(const [label,value] of entries){const m=add(dl,'div');add(m,'dt',label);add(m,'dd',value);}return dl;};
+    // Certificates: one row per record in a fixed type order, the type as the title, the next (pending)
+    // record of that property and type nested under it, and only the actions that apply.
+    const typeOrder=['gas-safety','eicr','epc','insurance','alarms','other'];
+    const typeRank=type=>{const i=typeOrder.indexOf(type);return i<0?typeOrder.length:i;};
+    const asLink=el=>{if(el)el.className='text-link';return el;};
+    const docWord=type=>type==='insurance'?'policy':'certificate';
+    const certActions=(parent,r)=>{
+      const row=add(parent,'div',undefined,'cert-actions');
+      if(r.status==='pending')quickButton(row,'Make current','activate',r.compliance_id);
+      else if(r.status==='current')quickButton(row,'Renew','renew',r.compliance_id);
+      asLink(docButton(row,'Open '+docWord(r.compliance_type),'Compliance',r.compliance_id,'document',r.document));
+      // Attach when there is no document; a quiet Replace link when there is.
+      const attach=attachButton(row,'Attach '+docWord(r.compliance_type),'Compliance',r.compliance_id,'document',r.version,r.document);
+      if(attach&&r.document){asLink(attach);attach.textContent='Replace '+docWord(r.compliance_type);}
+      if(r.status==='current')asLink(quickButton(row,'Renewal status','renewal',r.compliance_id));
+    };
+    const certFacts=r=>{
+      const facts=[];
+      if(r.energy_rating)facts.push('EPC '+r.energy_rating+(r.energy_score?' ('+r.energy_score+')':''));
+      if(r.issue_date||r.inspection_date)facts.push((r.inspection_date?'Inspected ':'Issued ')+date(r.inspection_date||r.issue_date));
+      facts.push(...[r.certificate_reference,r.cost?costText(r.cost):'',r.compliance_id].filter(Boolean));
+      if(r.smoke_alarms_checked===true)facts.push('Smoke alarms checked');if(r.co_alarms_checked===true)facts.push('CO alarms checked');
+      return facts.join(' · ');
+    };
+    const certRow=(ul,r,next,full)=>{
+      const li=add(ul,'li',undefined,'cert');li.setAttribute('data-record',r.compliance_id);
+      const head=add(li,'div',undefined,'cert-head');
+      add(head,'span',(r.status==='pending'?'Next '+docWord(r.compliance_type)+' · ':'')+words(r.compliance_type),'attn-title');
+      const days=r.days_to_expiry,live=r.group!=='history'&&r.status==='current'&&typeof days==='number';
+      if(live){const level=r.level&&Object.hasOwn(labels,r.level)?r.level:'neutral',pill=add(head,'span',undefined,'attn-pill '+level);
+        if(r.level)add(pill,'span',labels[r.level]+': ','sr-only');add(pill,'span',r.level?expiryText(days):aheadText(days));}
+      else if(r.status!=='current')add(head,'span',words(r.status),'attn-pill neutral');
+      const start=r.effective_date&&r.status==='pending'?'Starts '+date(r.effective_date):'';
+      add(li,'p',[start,r.expiry_date?(typeof days==='number'&&days<0?'Expired ':'Expires ')+date(r.expiry_date):'No expiry date recorded',
+        r.renewal_status&&r.status==='current'?'Renewal '+words(r.renewal_status).toLowerCase():'',r.provider].filter(Boolean).join(' · '),'attn-sub');
+      if(full){const facts=certFacts(r);if(facts)add(li,'p',facts,'subtext');}
+      if(r.group!=='history')certActions(li,r);
+      else asLink(docButton(add(li,'div',undefined,'cert-actions'),'Open '+docWord(r.compliance_type),'Compliance',r.compliance_id,'document',r.document));
+      if(next){const box=add(li,'div',undefined,'cert-next');box.setAttribute('data-record',next.compliance_id);
+        add(box,'p','Next '+docWord(next.compliance_type),'cert-next-title');
+        add(box,'p',[next.effective_date?'Starts '+date(next.effective_date):'',next.expiry_date?'Expires '+date(next.expiry_date):'',next.provider].filter(Boolean).join(' · '),'attn-sub');
+        if(full){const facts=certFacts(next);if(facts)add(box,'p',facts,'subtext');}
+        certActions(box,next);}
+    };
+    // Pairs each pending record with the current (or due) record of its property and type; returns the unpaired.
+    const certList=(ul,records,pendings,full)=>{
+      const left=pendings.slice();
+      for(const r of records){const i=left.findIndex(p=>p.property_id===r.property_id&&p.compliance_type===r.compliance_type);
+        certRow(ul,r,i<0?null:left.splice(i,1)[0],full);}
+      return left;
+    };
+    const byType=records=>records.slice().sort((a,b)=>typeRank(a.compliance_type)-typeRank(b.compliance_type)||String(a.expiry_date||'').localeCompare(String(b.expiry_date||'')));
     const levelBadge=(parent,attention)=>attention.count?badge(parent,attention.level):add(parent,'span','Nothing to review','badge neutral');
     if(page==='property'){
       const d=response.data,item=d.portfolio.properties.find(p=>p.property_id===options.propertyId);
@@ -237,7 +289,7 @@
         ['Cashflow per month',gbp(item.finance.monthly_cashflow_before_operating_expenses)],['Principal repaid',gbp(item.finance.principal_repaid_total)]]).className='metrics compact';
       {const row=add(value.el,'div',undefined,'actions start');quickButton(row,'Update value','value');}
       // Mortgage.
-      const mortgage=card(grid,'Mortgage');if(m)add(mortgage.head,'span',m.mortgage_id,'item-scope');
+      const mortgage=card(grid,'Mortgage');mortgage.el.setAttribute('data-section','mortgage');if(m)add(mortgage.head,'span',m.mortgage_id,'item-scope');
       if(m){
         alertLine(mortgage.el,m.fixed_until_alert,'Fixed rate ends');
         metricList(mortgage.el,[['Lender',recorded(m.lender)],['Type',m.mortgage_type?words(m.mortgage_type):'Not recorded'],
@@ -249,7 +301,7 @@
       if(details.previous_mortgages&&details.previous_mortgages.length){const ul=list(mortgage.el);
         for(const r of details.previous_mortgages)add(ul,'li','Earlier: '+r.mortgage_id+(r.lender?' · '+r.lender:'')+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – '),'subtext');}
       // Tenancy.
-      const tenancy=card(grid,'Tenancy');if(t)add(tenancy.head,'span',t.tenancy_id,'item-scope');
+      const tenancy=card(grid,'Tenancy');tenancy.el.setAttribute('data-section','tenancy');if(t)add(tenancy.head,'span',t.tenancy_id,'item-scope');
       if(t){
         alertLine(tenancy.el,t.rent_review,'Rent review');
         metricList(tenancy.el,[['Status',words(t.status)],['Rent per month',gbp(t.monthly_rent)],['Start',when(t.start_date)],['End',when(t.end_date)],
@@ -272,24 +324,17 @@
         for(const r of details.previous_tenancies)add(ul,'li','Earlier: '+r.tenancy_id+' · '+words(r.status)+' · '+[r.start_date,r.end_date].map(when).join(' – '),'subtext');}
       // This property's compliance and maintenance, linking to the full lists filtered to it.
       const mine=records=>records.filter(r=>r.property_id===item.property_id);
-      const compliance=card(grid,'Compliance');
+      const compliance=card(grid,'Compliance');compliance.el.setAttribute('data-section','compliance');
       {const link=add(compliance.head,'a','All');link.href='#compliance';link.setAttribute('data-filter-property',item.property_id);}
       const certs=[...mine(d.compliance.groups.due),...mine(d.compliance.groups.current)];
       if(!certs.length)empty(compliance.el,'No current certificates recorded.');
-      {const ul=list(compliance.el);for(const r of certs){const li=add(ul,'li'),top=add(li,'div',undefined,'item-top');
-        if(r.level)badge(top,r.level);else add(top,'span',words(r.status),'badge neutral');add(top,'span',words(r.compliance_type),'item-scope');
-        add(li,'p',r.expiry_date?'Expiry '+date(r.expiry_date)+(r.days_to_expiry!==null?' · '+expiryText(r.days_to_expiry):''):'No expiry date recorded','subtext');
-        if(r.renewal_status)add(li,'p','Renewal '+words(r.renewal_status).toLowerCase(),'subtext');
-        {const docs=add(li,'div',undefined,'actions start');docButton(docs,'Open certificate','Compliance',r.compliance_id,'document',r.document);
-          attachButton(docs,'Attach certificate','Compliance',r.compliance_id,'document',r.version,r.document);}
-        {const row=add(li,'div',undefined,'actions start');if(r.status==='pending')quickButton(row,'Make current','activate',r.compliance_id);
-          else if(r.status==='current')quickButton(row,'Renew','renew',r.compliance_id);
-          quickButton(row,'Renewal status','renewal',r.compliance_id);}}}
-      const repairs=card(grid,'Maintenance');
+      {const ul=list(compliance.el),pendings=certs.filter(r=>r.status==='pending');
+        for(const r of certList(ul,byType(certs.filter(r=>r.status!=='pending')),pendings,false))certRow(ul,r,null,false);}
+      const repairs=card(grid,'Maintenance');repairs.el.setAttribute('data-section','maintenance');
       {const link=add(repairs.head,'a','All');link.href='#maintenance';link.setAttribute('data-filter-property',item.property_id);}
       const jobs=[...mine(d.maintenance.groups.open),...mine(d.maintenance.groups.recurring)];
       if(!jobs.length)empty(repairs.el,'No open or recurring maintenance.');
-      {const ul=list(repairs.el);for(const r of jobs){const li=add(ul,'li'),top=add(li,'div',undefined,'item-top');
+      {const ul=list(repairs.el);for(const r of jobs){const li=add(ul,'li'),top=add(li,'div',undefined,'item-top');li.setAttribute('data-record',r.maintenance_id);
         if(r.level)badge(top,r.level);else add(top,'span',words(r.status),'badge neutral');add(top,'span',r.category?words(r.category):words(r.maintenance_type),'item-scope');
         add(li,'p',r.description||'No description','item-action');
         const due=r.group==='recurring'?(r.next_due_date?'Next due '+date(r.next_due_date):'Next due date missing'):(r.target_date?'Target '+date(r.target_date):'');
@@ -354,7 +399,7 @@
       const grid=add(main,'div',undefined,'grid');
       if(!d.records.length)empty(card(grid,'Records').el,'No company compliance records yet.');
       for(const r of d.records){
-        const box=card(grid,words(r.type));add(box.head,'span',words(r.status),'badge neutral');
+        const box=card(grid,words(r.type));box.el.setAttribute('data-record',r.company_compliance_id);add(box.head,'span',words(r.status),'badge neutral');
         metricList(box.el,[['Record',r.company_compliance_id],['Due',r.due_date?date(r.due_date):'Not recorded'],
           ['Period',r.period_start||r.period_end?(r.period_start?date(r.period_start):'?')+' – '+(r.period_end?date(r.period_end):'?'):'Not recorded'],
           ['Completed',r.completed_date?date(r.completed_date):'Not recorded'],['Reference',recorded(r.reference)],['Managed by',recorded(r.managed_by)]]);
@@ -451,37 +496,30 @@
       heading('Compliance');
       const toolbar=add(main,'div',undefined,'toolbar');propertyFilter(toolbar,d.properties,filter);
       const pick=records=>filter?records.filter(r=>r.property_id===filter):records;
-      const item=(parent,r)=>{
-        const row=add(parent,'li'),top=add(row,'div',undefined,'item-top');
-        if(r.level)badge(top,r.level);else add(top,'span',words(r.status),'badge neutral');
-        add(top,'span',[r.property_id,words(r.compliance_type)].join(' · '),'item-scope');
-        add(row,'p',r.expiry_date?'Expiry '+date(r.expiry_date)+(r.group!=='history'&&r.days_to_expiry!==null?' · '+expiryText(r.days_to_expiry):''):'No expiry date recorded','item-action');
-        const facts=[];
-        if(r.renewal_status)facts.push('Renewal '+words(r.renewal_status).toLowerCase());
-        if(r.energy_rating)facts.push('EPC '+r.energy_rating+(r.energy_score?' ('+r.energy_score+')':''));
-        if(r.issue_date||r.inspection_date)facts.push((r.inspection_date?'Inspected ':'Issued ')+date(r.inspection_date||r.issue_date));
-        if(facts.length)add(row,'p',facts.join(' · '),'subtext');
-        const who=[r.provider,r.certificate_reference,r.cost?costText(r.cost):'',r.compliance_id].filter(Boolean);
-        add(row,'p',who.join(' · '),'subtext');
-        const alarms=[r.smoke_alarms_checked===true?'Smoke alarms checked':'',r.co_alarms_checked===true?'CO alarms checked':''].filter(Boolean);
-        if(alarms.length)add(row,'p',alarms.join(' · '),'subtext');
-        {const docs=add(row,'div',undefined,'actions start');docButton(docs,'Open certificate','Compliance',r.compliance_id,'document',r.document);
-          if(r.group!=='history')attachButton(docs,'Attach certificate','Compliance',r.compliance_id,'document',r.version,r.document);}
-        if(r.group!=='history'){const actions=add(row,'div',undefined,'actions start');
-          if(r.status==='pending')quickButton(actions,'Make current','activate',r.compliance_id);
-          else if(r.status==='current')quickButton(actions,'Renew','renew',r.compliance_id);
-          quickButton(actions,'Renewal status','renewal',r.compliance_id);}
-      };
       const grid=add(main,'div',undefined,'grid');
+      // Next (pending) records are shown under the record they will replace.
+      const pendings=pick([...d.groups.due,...d.groups.current]).filter(r=>r.status==='pending');
       const section=(name,title,records,closed)=>{
         const box=card(grid,title);add(box.head,'span',String(records.length),'item-scope');
         if(!records.length){empty(box.el,name==='due'?'Nothing needs renewing in the next 90 days.':name==='current'?'No other current certificates.':'No earlier certificates.');return;}
         let parent=box.el;
         if(closed){parent=add(box.el,'details');add(parent,'summary','Show '+records.length+' earlier');}
-        const ul=list(parent);for(const r of records)item(ul,r);
+        if(name==='current'){
+          // By property, then the fixed type order.
+          const props=Array.from(new Set(records.map(r=>r.property_id))).sort();
+          for(const prop of props){if(!filter)add(parent,'h3',prop,'month-heading');
+            certList(list(parent),byType(records.filter(r=>r.property_id===prop)),pendings,true);}
+          return;
+        }
+        const ul=list(parent);
+        if(name==='due')certList(ul,records,pendings,true);else for(const r of records)certRow(ul,r,null,true);
       };
+      // Next records with nothing current or due to sit under are listed on their own.
+      const holders=pick([...d.groups.due,...d.groups.current]).filter(r=>r.status!=='pending');
+      const loose=pendings.filter(p=>!holders.some(r=>r.property_id===p.property_id&&r.compliance_type===p.compliance_type));
       section('due','Needs renewal',pick(d.groups.due));
-      section('current','Current',pick(d.groups.current));
+      section('current','Current',pick(d.groups.current).filter(r=>r.status!=='pending'));
+      if(loose.length){const box=card(grid,'Next');const ul=list(box.el);for(const r of loose)certRow(ul,r,null,true);}
       section('history','Earlier',pick(d.groups.history),true);
       return;
     }
@@ -543,7 +581,7 @@
     const dateRow=(row,item,severity)=>{
       row.className='attn-item';
       const link=add(row,'a',undefined,'attn');
-      link.href=item.property==='Company'?'#company':'#property/'+encodeURIComponent(item.property);
+      link.href=itemHref(item);
       const text=add(link,'span',undefined,'attn-text');
       add(text,'span',item.title_code?words(item.title):item.title,'attn-title');
       const when=[item.note,item.date?date(item.date):''].filter(Boolean).join(' ');
@@ -554,6 +592,14 @@
       else if(level!=='neutral')add(link,'span',labels[level],'attn-pill '+level);
       add(link,'span','›','menu-chevron').setAttribute('aria-hidden','true');
     };
+    // Where a dated item opens: its card on the property page (and the record), or the company record.
+    const sections={'Compliance':'compliance','Rent Review':'tenancy','Recurring Maintenance':'maintenance','Open Maintenance':'maintenance',
+      'Maintenance':'maintenance','Mortgage':'mortgage','compliance':'compliance','compliance-start':'compliance','rent-review':'tenancy',
+      'maintenance':'maintenance','mortgage':'mortgage'};
+    const itemHref=item=>{const id=item.record_id||item.id||'',e=encodeURIComponent;
+      if(item.property==='Company')return '#company'+(id?'/'+e(id):'');
+      const section=sections[item.kind||item.category];
+      return '#property/'+e(item.property)+(section?'/'+section+(id?'/'+e(id):''):'');};
     const comingUp=(parent,items)=>{const ul=list(parent);for(const item of items)dateRow(add(ul,'li'),item,false);};
     heading(full?'Attention':'What needs attention?');
     // Severity counters first: the whole picture in one row.
@@ -626,10 +672,22 @@
     let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null,propertyFilter='',slow=false,slowTimer=null;
     const REFRESH_AFTER_MS=5*60*1000;
     // '#property/<property_id>' opens one property's page; other hashes name a screen.
-    const route=()=>{const hash=root.location.hash.slice(1),match=/^property\/(.+)$/.exec(hash);
-      if(match){let id;try{id=decodeURIComponent(match[1]);}catch(_){id='';}return {page:'property',propertyId:id};}
+    // '#property/<id>[/<card>[/<record>]]' and '#company/<record>' open a place on the page.
+    const route=()=>{const hash=root.location.hash.slice(1),parts=hash.split('/').map(p=>{try{return decodeURIComponent(p);}catch(_){return '';}});
+      if(parts[0]==='property'&&parts.length>1)return {page:'property',propertyId:parts[1],section:parts[2]||null,recordId:parts[3]||null};
+      if(parts[0]==='company'&&parts.length>1)return {page:'company',propertyId:null,section:null,recordId:parts[1]||null};
       if(hash==='properties'||hash==='finance')return {page:'portfolio',propertyId:null};
       return {page:pages.includes(hash)&&hash!=='property'?hash:'home',propertyId:null};};
+    // Scrolls to the card or record a link named and highlights it, once per link opened.
+    let focused=null;
+    function focusTarget(){
+      const r=route(),key=root.location.hash;if((!r.section&&!r.recordId)||focused===key||!all||form)return;
+      const find=(attribute,value)=>value?Array.from(main.querySelectorAll('['+attribute+']')).find(el=>el.getAttribute(attribute)===value):null;
+      const el=find('data-record',r.recordId)||find('data-section',r.section);
+      if(!el)return;focused=key;
+      if(typeof el.scrollIntoView==='function')el.scrollIntoView({block:'center'});
+      if(el.classList){el.classList.add('flash');root.setTimeout(()=>el.classList.remove('flash'),2400);}
+    }
     const page=()=>route().page;
     const options={canSignOut:typeof adapter.signOut==='function',canSignOutEverywhere:typeof adapter.signOutEverywhere==='function',
       canCheckHealth:typeof adapter.checkHealth==='function',version:adapter.version,form:null,propertyFilter:''};
@@ -694,7 +752,7 @@
       // Offline during a refresh keeps the last answer; any other problem (e.g. signed out) clears it.
       else if(all&&next&&next.error&&next.error.code==='OFFLINE')stale=true;
       else {all=null;problem=next||{ok:false,error:{code:'OFFLINE'}};}
-      paint();
+      paint();focusTarget();
     }
     // Company compliance add/edit. One request_id per opened form, reused on retry, so an uncertain
     // save that is sent again never writes twice.
@@ -920,9 +978,9 @@
     if(typeof doc.addEventListener==='function')doc.addEventListener('visibilitychange',()=>{
       if(doc.visibilityState==='visible'&&!loading&&!refreshing&&Date.now()-loadedAt>REFRESH_AFTER_MS)load();});
     root.addEventListener('hashchange',()=>{
-      form=null;
+      form=null;focused=null;
       paint();
-      main.focus();root.scrollTo(0,0);
+      main.focus();root.scrollTo(0,0);focusTarget();
     });
     load();
   }

@@ -37,6 +37,10 @@ main:focus,main:focus-visible{outline:none}
 .list>li.attn-item{padding:0}.attn{display:flex;align-items:center;gap:10px;padding:11px 0;color:var(--ink);text-decoration:none;min-height:44px}
 .attn-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.attn-title{font-weight:600;font-size:.95rem;overflow-wrap:anywhere}.attn-sub{font-size:.8rem;color:var(--muted)}
 .month-heading{font-size:.78rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:14px 0 2px}.card-head+.month-heading{margin-top:0}
+.cert-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.cert-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:8px 0 2px}
+.text-link{border:0;background:none;padding:6px 0;min-height:36px;font:inherit;font-size:.85rem;font-weight:600;color:var(--green);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.cert-next{margin:10px 0 2px 12px;padding:8px 0 2px 12px;border-left:2px solid var(--line)}.cert-next-title{font-size:.78rem;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 2px}
+.flash{animation:flash 2.2s ease-out}@keyframes flash{0%,35%{background:#fff4c7}100%{background:transparent}}
 .attn-pill{flex:none;font-size:.75rem;font-weight:650;border-radius:20px;padding:4px 10px;white-space:nowrap}
 .menu-icon.ok{background:#e4eee7;color:var(--green)}.menu-icon.fail{background:#f6e3e1;color:#a8322a}.menu-row:disabled{cursor:progress;opacity:.75}
 .version{text-align:center}
