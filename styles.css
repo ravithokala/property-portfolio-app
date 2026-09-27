@@ -41,6 +41,12 @@ main:focus,main:focus-visible{outline:none}
 .text-link{border:0;background:none;padding:6px 0;min-height:36px;font:inherit;font-size:.85rem;font-weight:600;color:var(--green);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 .cert-next{margin:10px 0 2px 12px;padding:8px 0 2px 12px;border-left:2px solid var(--line)}.cert-next-title{font-size:.78rem;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 2px}
 .flash{animation:flash 2.2s ease-out}@keyframes flash{0%,35%{background:#fff4c7}100%{background:transparent}}
+.progress{position:relative;height:3px;margin:0 0 10px;overflow:hidden;border-radius:3px;background:#e4ece7}.progress::after{content:"";position:absolute;inset:0 auto 0 0;width:35%;border-radius:3px;background:var(--green);animation:progress 1.3s ease-in-out infinite}
+@keyframes progress{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+.loading-title{color:var(--muted)}
+.skeleton,.skeleton-block{background:linear-gradient(90deg,#e8edeb 0%,#e8edeb 38%,#f5f8f6 50%,#e8edeb 62%,#e8edeb 100%);background-size:250% 100%;animation:shimmer 1.4s linear infinite}
+@keyframes shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+@media (prefers-reduced-motion:reduce){.progress::after,.skeleton,.skeleton-block{animation:none}}
 .attn-pill{flex:none;font-size:.75rem;font-weight:650;border-radius:20px;padding:4px 10px;white-space:nowrap}
 .menu-icon.ok{background:#e4eee7;color:var(--green)}.menu-icon.fail{background:#f6e3e1;color:#a8322a}.menu-row:disabled{cursor:progress;opacity:.75}
 .version{text-align:center}

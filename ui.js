@@ -117,14 +117,21 @@
     const list=parent=>add(parent,'ul',undefined,'list');
     const button=(parent,text,attribute)=>{const el=add(parent,'button',text,'button');el.type='button';el.setAttribute(attribute,'true');return el;};
     if(loading){
-      // A quiet outline of the page (counters, then cards) while the first answer arrives.
+      // While the first answer arrives: a moving bar, the page's own section titles over shimmering
+      // lines, and a status line that explains a longer wait (the server can be slow to wake up).
       heading('Loading your portfolio');
-      add(main,'p',options.slow?'Still loading: the portfolio server can take a little longer when it has been idle.':'Loading your portfolio…',
-        options.slow?'loading-text':'sr-only').setAttribute('role','status');
-      const counters=add(main,'div',undefined,'counters');counters.setAttribute('aria-hidden','true');
-      for(let i=0;i<4;i++)add(counters,'div',undefined,'counter skeleton-block');
+      add(main,'div',undefined,'progress').setAttribute('aria-hidden','true');
+      const wait=options.wait||0;
+      add(main,'p',wait>=2?'The portfolio server is waking up. This can take a few seconds after a quiet spell.':
+        wait===1?'Getting your portfolio…':'Loading your portfolio…',wait?'loading-text':'sr-only').setAttribute('role','status');
+      const sections={home:['Needs attention','Coming up','Open maintenance','Portfolio snapshot'],attention:['All attention items','Coming up · next 6 months'],
+        portfolio:['Portfolio finance',''],maintenance:['Open','Recurring'],more:['Portfolio','Account'],company:['Company compliance'],
+        compliance:['Needs renewal','Current'],property:['Value','Mortgage','Tenancy','Compliance']}[page]||['',''];
+      if(page==='home'||page==='attention'){const counters=add(main,'div',undefined,'counters');counters.setAttribute('aria-hidden','true');
+        for(let i=0;i<4;i++)add(counters,'div',undefined,'counter skeleton-block');}
       const grid=add(main,'div',undefined,'grid');grid.setAttribute('aria-hidden','true');
-      for(let c=0;c<2;c++){const box=add(grid,'div',undefined,'card');add(box,'div',undefined,'skeleton title');
+      for(const title of sections){const box=add(grid,'div',undefined,'card');
+        if(title){const head=add(box,'div',undefined,'card-head');add(head,'h2',title,'loading-title');}else add(box,'div',undefined,'skeleton title');
         for(let i=0;i<3;i++)add(box,'div',undefined,'skeleton'+(i%2?' short':''));}
       return;
     }
@@ -669,7 +676,7 @@
   function mount(doc,adapter) {
     const main=doc.getElementById('main'),select=doc.getElementById('scenario');
     // One 'all' answer serves every screen (memory only). problem holds a failed answer instead.
-    let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null,propertyFilter='',slow=false,slowTimer=null;
+    let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null,propertyFilter='',wait=0,waitTimers=[];
     const REFRESH_AFTER_MS=5*60*1000;
     // '#property/<property_id>' opens one property's page; other hashes name a screen.
     // '#property/<id>[/<card>[/<record>]]' and '#company/<record>' open a place on the page.
@@ -719,7 +726,7 @@
       if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
       const tab=['company','compliance'].includes(page())?'more':page()==='property'?'portfolio':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
-      options.form=form;options.propertyFilter=propertyFilter;options.slow=slow;options.propertyId=route().propertyId;options.health=health;
+      options.form=form;options.propertyFilter=propertyFilter;options.wait=wait;options.propertyId=route().propertyId;options.health=health;
       render(doc,main,response,page(),loading,options);
       wireCompany(response);
       wireMaintenance(response);
@@ -740,15 +747,15 @@
     // fresh (↻): the server reads the workbook again rather than its cached read.
     async function load(fresh){const now=++generation;
       if(all)refreshing=true;else loading=true;
-      // A first load that takes a while says so (the server can be slow to wake up).
-      slow=false;if(slowTimer)root.clearTimeout(slowTimer);
-      if(!all&&typeof root.setTimeout==='function')slowTimer=root.setTimeout(()=>{if(now===generation&&loading){slow=true;paint();}},8000);
+      // A first load that takes a while says so: after 2 s, then after 5 s (the server may be waking up).
+      wait=0;waitTimers.forEach(t=>root.clearTimeout(t));waitTimers=[];
+      if(!all&&typeof root.setTimeout==='function')waitTimers=[[2000,1],[5000,2]].map(([ms,stage])=>root.setTimeout(()=>{if(now===generation&&loading){wait=stage;paint();}},ms));
       paint();
       let next;
       try{next=await adapter.load('all',select?select.value:undefined,{fresh:fresh===true});}
       catch(_){next={ok:false,error:{code:'OFFLINE'}};}
       if(now!==generation)return;
-      loading=false;refreshing=false;loadedAt=Date.now();slow=false;if(slowTimer)root.clearTimeout(slowTimer);
+      loading=false;refreshing=false;loadedAt=Date.now();wait=0;waitTimers.forEach(t=>root.clearTimeout(t));waitTimers=[];
       if(next&&next.ok===true){all=next;problem=null;stale=false;}
       // Offline during a refresh keeps the last answer; any other problem (e.g. signed out) clears it.
       else if(all&&next&&next.error&&next.error.code==='OFFLINE')stale=true;
