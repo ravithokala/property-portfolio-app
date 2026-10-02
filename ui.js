@@ -671,13 +671,17 @@
       for(const source of data.regulatory.sources){const row=add(sources,'li');add(row,'h3',source.title);add(row,'p','Last checked: '+date(source.last_checked?source.last_checked.slice(0,10):null),'subtext');add(row,'p',source.monitoring_due?'Monitoring check due':'Monitoring check not currently due','subtext');}
     }
   }
-  // adapter: {load(kind, scenario) -> Promise<response>, signOut?(), renderSignIn?(host, done), version?}
-  // Responses live in memory only; nothing is written to device storage here.
+  // adapter: {load(kind, scenario) -> Promise<response>, cached?() -> response|null, signOut?(), renderSignIn?(host, done), version?}
+  // Nothing is written to device storage here; the adapter may hand back the last answer it saved.
   function mount(doc,adapter) {
     const main=doc.getElementById('main'),select=doc.getElementById('scenario');
     // One 'all' answer serves every screen (memory only). problem holds a failed answer instead.
     let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null,propertyFilter='',wait=0,waitTimers=[];
     const REFRESH_AFTER_MS=5*60*1000;
+    // The last answer saved on this device (if any) is shown at once; the first load then refreshes it,
+    // and with no connection it stays on screen marked "Offline".
+    if(typeof adapter.cached==='function'){let saved=null;try{saved=adapter.cached();}catch(_){/* none */}
+      if(saved&&saved.ok===true&&saved.data&&saved.permissions){all=saved;loading=false;}}
     // '#property/<property_id>' opens one property's page; other hashes name a screen.
     // '#property/<id>[/<card>[/<record>]]' and '#company/<record>' open a place on the page.
     const route=()=>{const hash=root.location.hash.slice(1),parts=hash.split('/').map(p=>{try{return decodeURIComponent(p);}catch(_){return '';}});
@@ -718,7 +722,9 @@
       doc.getElementById('access').textContent=all?(all.permissions.can_write?'Editor':'View only'):select?'Preview':
         code(problem)==='UNAUTHENTICATED'?'Signed out':'';
       doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
-      const timing=doc.getElementById('timing');if(timing)timing.textContent=all?timingText(all):'';
+      // Offline: say plainly that this is the copy saved on the phone, and from when.
+      const savedAt=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'}).format(new Date(value)):'earlier';
+      const timing=doc.getElementById('timing');if(timing)timing.textContent=!all?'':stale?'No connection. Showing the copy saved on this phone from '+savedAt(all.observed_at)+'. Changes can’t be saved until you’re back online.':timingText(all);
       const title=doc.getElementById('screen-title');
       if(title)title.textContent=form?(form.kind==='attach'?'Attach':form.quick?form.shortTitle||form.title:form.kind==='maintenance'?mntTitles[form.mode]:
         form.mode==='create'?'Add record':'Edit record'):page()==='property'?route().propertyId:titles[page()]||'Home';
