@@ -2,17 +2,18 @@
    so the portfolio can be viewed offline (RT's decision, 2026-10-02), the last complete answer. Both
    are removed on sign-out or when the session ends.
    A module (2026-10-02): app.js imports it. */
+import { SESSION_KEY, session, saveSession, forgetSession } from './auth.js';
 import { sendRequest } from './request.js';
 const root=globalThis;
-// Named for this app: other apps on the same github.io origin use their own keys.
-const SESSION_KEY='property-portfolio.session';
-const read=()=>{try{const key=root.localStorage.getItem(SESSION_KEY);return /^[0-9a-f]{64}$/.test(key||'')?key:null;}catch(_){return null;}};
-const save=key=>{try{root.localStorage.setItem(SESSION_KEY,key);}catch(_){/* storage blocked: sign in again next time */}};
+// The session key is kept by ../app-kit's auth.js (the same in all three apps), under this app's own name
+// (config.js: other apps on the same github.io origin use their own keys). Only a 64-hex key counts.
+const read=session;
+const save=key=>saveSession(key);
 // The last 'all' answer, for opening instantly and viewing offline. Only with a session and for at most
 // 30 days. It survives app updates (an update while offline must not take the data away); the screen
 // drops it only if it cannot be drawn.
 const DATA_KEY='property-portfolio.last',DATA_MAX_AGE_MS=30*24*60*60*1000;
-const forget=()=>{for(const key of [SESSION_KEY,DATA_KEY]){try{root.localStorage.removeItem(key);}catch(_){/* nothing stored */}}};
+const forget=()=>{forgetSession();try{root.localStorage.removeItem(DATA_KEY);}catch(_){/* nothing stored */}};
 const remember=answer=>{
   try{const copy={...answer};delete copy.timing;
     root.localStorage.setItem(DATA_KEY,JSON.stringify({saved_at:Date.now(),version:root.PortfolioVersion,answer:copy}));}

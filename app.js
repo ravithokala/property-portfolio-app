@@ -1,6 +1,7 @@
 /* Starts the app: Google sign-in, the API adapter and the shell-only service worker. */
 import { CONFIG } from './config.js';
 import { PortfolioApi } from './api.js';
+import { init, googleToken, showPrompt, signOutOfGoogle } from './auth.js';
 const root=globalThis;
 // GitHub Pages cannot send frame-ancestors, so the app refuses to run inside another page
 // (no taps can be tricked through a hidden frame).
@@ -13,12 +14,21 @@ function start() {
   const configured=/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(config.apiUrl||'') &&
     /^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(config.clientId||'');
   const api=configured?PortfolioApi.create(config):null;
-  let signInProblem=null, afterSignIn=null, gisReady=false, confirmDone=null;
-  const gis=()=>root.google&&root.google.accounts&&root.google.accounts.id;
+  let signInProblem=null, afterSignIn=null, listening=false, confirmDone=null;
 
-  async function waitForGis() {
-    for(let i=0;i<100&&!gis();i++)await new Promise(resolve=>root.setTimeout(resolve,100));
-    return Boolean(gis());
+  // Google's button and prompt are ../app-kit's (auth.js, the same in all three apps). This app listens for
+  // one credential at a time and goes on listening after each, so the button still works if the screen is
+  // not drawn again; Google's own prompt is shown each time the button is drawn, as before.
+  function listen() {
+    if(listening)return;
+    listening=true;
+    googleToken({prompt:false}).then(token=>{listening=false;listen();return onCredential({credential:token});});
+  }
+  // Draws Google's button in host; false (with the reason shown in host) if Google sign-in did not load.
+  async function showGoogle(host,text,missing) {
+    try{await init(config.clientId,host,text);}catch(_){host.textContent=missing;return false;}
+    listen();showPrompt();
+    return true;
   }
   // The Google ID token goes straight to the server and is never stored.
   async function onCredential(response) {
@@ -42,32 +52,21 @@ function start() {
     dropCached:()=>{if(api)api.forgetAnswer();},
     save:async(action,payload)=>api?api.write(action,payload):{ok:false,schema_version:1,error:{code:'NOT_CONFIGURED'}},
     newRequestId:()=>root.crypto.randomUUID(),
-    signOut:async()=>{if(api)await api.signOut();const id=gis();if(id)id.disableAutoSelect();},
+    signOut:async()=>{if(api)await api.signOut();signOutOfGoogle();},
     uploadDocument:async payload=>api?api.uploadDocument(payload):{ok:false,error:{code:'NOT_CONFIGURED'}},
     // Shows Google's button in host; done(result) once the server has confirmed the account.
     async renderConfirm(host,done) {
       if(!api){done({ok:false,error:{code:'NOT_CONFIGURED'}});return;}
-      if(!await waitForGis()){host.textContent='Google sign-in did not load. Check the connection and try again.';return;}
-      if(!gisReady){
-        gis().initialize({client_id:config.clientId,callback:onCredential,auto_select:true,use_fedcm_for_prompt:true,cancel_on_tap_outside:false});
-        gisReady=true;
-      }
+      // Set first: the credential may arrive as soon as the button is drawn.
       confirmDone=done;
-      gis().renderButton(host,{theme:'outline',size:'large',text:'continue_with',shape:'pill'});
-      gis().prompt();
+      if(!await showGoogle(host,'continue_with','Google sign-in did not load. Check the connection and try again.'))confirmDone=null;
     },
     openDocument:async(tab,id,field)=>api?api.openDocument(tab,id,field):{ok:false,error:{code:'NOT_CONFIGURED'}},
     checkHealth:async()=>api?api.health():{ok:false,error:{code:'NOT_CONFIGURED'}},
-    signOutEverywhere:async()=>{const result=api?await api.signOutEverywhere():{ok:false,error:{code:'NOT_CONFIGURED'}};const id=gis();if(id&&result.ok)id.disableAutoSelect();return result;},
+    signOutEverywhere:async()=>{const result=api?await api.signOutEverywhere():{ok:false,error:{code:'NOT_CONFIGURED'}};if(result.ok)signOutOfGoogle();return result;},
     async renderSignIn(host,done) {
       afterSignIn=done;
-      if(!await waitForGis()){host.textContent='Google sign-in did not load. Check the connection and reload.';return;}
-      if(!gisReady){
-        gis().initialize({client_id:config.clientId,callback:onCredential,auto_select:true,use_fedcm_for_prompt:true,cancel_on_tap_outside:false});
-        gisReady=true;
-      }
-      gis().renderButton(host,{theme:'outline',size:'large',text:'signin_with',shape:'pill'});
-      gis().prompt();
+      await showGoogle(host,'signin_with','Google sign-in did not load. Check the connection and reload.');
     }
   };
   if(!api)delete adapter.signOut;
