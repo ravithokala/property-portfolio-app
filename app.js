@@ -36,6 +36,7 @@
     },
     // The last answer saved on this device: shown at once, then refreshed (and all there is when offline).
     cached:()=>api&&!signInProblem?api.lastAnswer():null,
+    dropCached:()=>{if(api)api.forgetAnswer();},
     save:async(action,payload)=>api?api.write(action,payload):{ok:false,schema_version:1,error:{code:'NOT_CONFIGURED'}},
     newRequestId:()=>root.crypto.randomUUID(),
     signOut:async()=>{if(api)await api.signOut();const id=gis();if(id)id.disableAutoSelect();},

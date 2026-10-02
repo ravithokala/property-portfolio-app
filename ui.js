@@ -678,10 +678,12 @@
     // One 'all' answer serves every screen (memory only). problem holds a failed answer instead.
     let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null,propertyFilter='',wait=0,waitTimers=[];
     const REFRESH_AFTER_MS=5*60*1000;
+    // True while the answer on screen is the device's saved copy (possibly from an older app version).
+    let savedCopy=false;
     // The last answer saved on this device (if any) is shown at once; the first load then refreshes it,
     // and with no connection it stays on screen marked "Offline".
     if(typeof adapter.cached==='function'){let saved=null;try{saved=adapter.cached();}catch(_){/* none */}
-      if(saved&&saved.ok===true&&saved.data&&saved.permissions){all=saved;loading=false;}}
+      if(saved&&saved.ok===true&&saved.data&&saved.permissions){all=saved;loading=false;savedCopy=true;}}
     // '#property/<property_id>' opens one property's page; other hashes name a screen.
     // '#property/<id>[/<card>[/<record>]]' and '#company/<record>' open a place on the page.
     const route=()=>{const hash=root.location.hash.slice(1),parts=hash.split('/').map(p=>{try{return decodeURIComponent(p);}catch(_){return '';}});
@@ -716,7 +718,19 @@
       if(kind==='property')return {...all,warnings:[],data:{portfolio:all.data.portfolio,compliance:all.data.compliance,maintenance:all.data.maintenance}};
       return {...all,warnings:kind==='home'?all.warnings:[],data:all.data[kind]};
     }
+    // A saved copy that this version of the app cannot draw is dropped, and the screen falls back to
+    // loading (or to the no-connection message); it never leaves a broken page.
     function paint(){
+      try{paintNow();}
+      catch(error){
+        if(!savedCopy)throw error;
+        savedCopy=false;all=null;form=null;
+        if(typeof adapter.dropCached==='function'){try{adapter.dropCached();}catch(_){/* nothing to drop */}}
+        if(refreshing){refreshing=false;loading=true;}else{problem={ok:false,error:{code:'OFFLINE'}};stale=false;}
+        paintNow();
+      }
+    }
+    function paintNow(){
       const response=current();
       // Signed out only once the server says so; nothing while the first answer is on its way.
       doc.getElementById('access').textContent=all?(all.permissions.can_write?'Editor':'View only'):select?'Preview':
@@ -762,7 +776,7 @@
       catch(_){next={ok:false,error:{code:'OFFLINE'}};}
       if(now!==generation)return;
       loading=false;refreshing=false;loadedAt=Date.now();wait=0;waitTimers.forEach(t=>root.clearTimeout(t));waitTimers=[];
-      if(next&&next.ok===true){all=next;problem=null;stale=false;}
+      if(next&&next.ok===true){all=next;problem=null;stale=false;savedCopy=false;}
       // Offline during a refresh keeps the last answer; any other problem (e.g. signed out) clears it.
       else if(all&&next&&next.error&&next.error.code==='OFFLINE')stale=true;
       else {all=null;problem=next||{ok:false,error:{code:'OFFLINE'}};}

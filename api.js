@@ -7,8 +7,9 @@
   const SESSION_KEY='property-portfolio.session';
   const read=()=>{try{const key=root.localStorage.getItem(SESSION_KEY);return /^[0-9a-f]{64}$/.test(key||'')?key:null;}catch(_){return null;}};
   const save=key=>{try{root.localStorage.setItem(SESSION_KEY,key);}catch(_){/* storage blocked: sign in again next time */}};
-  // The last 'all' answer, for opening instantly and viewing offline. Only with a session, only from this
-  // app version (an older shape is never drawn by newer code), and for at most 30 days.
+  // The last 'all' answer, for opening instantly and viewing offline. Only with a session and for at most
+  // 30 days. It survives app updates (an update while offline must not take the data away); the screen
+  // drops it only if it cannot be drawn.
   const DATA_KEY='property-portfolio.last',DATA_MAX_AGE_MS=30*24*60*60*1000;
   const forget=()=>{for(const key of [SESSION_KEY,DATA_KEY]){try{root.localStorage.removeItem(key);}catch(_){/* nothing stored */}}};
   const remember=answer=>{
@@ -21,7 +22,7 @@
       const raw=root.localStorage.getItem(DATA_KEY);if(!raw)return null;
       const stored=JSON.parse(raw),answer=stored&&stored.answer;
       if(read()&&typeof stored.saved_at==='number'&&Date.now()-stored.saved_at<=DATA_MAX_AGE_MS&&Date.now()>=stored.saved_at&&
-        stored.version===root.PortfolioVersion&&answer&&answer.ok===true&&answer.schema_version===1&&
+        answer&&answer.ok===true&&answer.schema_version===1&&
         answer.data&&typeof answer.data==='object'&&answer.permissions&&typeof answer.observed_at==='string')return answer;
       root.localStorage.removeItem(DATA_KEY);
     }catch(_){/* unreadable: treated as none */}
@@ -55,6 +56,8 @@
       hasSession:()=>read()!==null,
       // The last complete answer saved on this device, or null.
       lastAnswer:()=>recall(),
+      // Removes the saved answer only (the session stays): used when it cannot be drawn.
+      forgetAnswer:()=>{try{root.localStorage.removeItem(DATA_KEY);}catch(_){/* nothing stored */}},
       // Exchanges a Google ID token (kept in memory only) for this device's app session.
       async signIn(idToken) {
         let result;
