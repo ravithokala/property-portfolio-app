@@ -28,10 +28,15 @@
     return null;
   };
   const failure=code=>({ok:false,schema_version:1,error:{code}});
+  // Well over the slowest normal answer (a first open after the server has been idle).
+  const READ_WAIT_MS=20000;
 
   function create(config) {
     // A plain-text POST needs no CORS pre-flight, which Apps Script cannot answer.
     // Apps Script can be slow to start, but a request never waits more than 90 seconds.
+    // Connected but with no internet (mobile data used up) a request never fails, it hangs. Requests that
+    // only read give up after READ_WAIT_MS, so the saved copy is shown as offline instead of "Updating…" for
+    // a minute and a half. Saves keep the long wait: the server may still finish one.
     async function post(body,timeoutMs=90000) {
       const controller=typeof root.AbortController==='function'?new root.AbortController():null;
       const timer=controller?root.setTimeout(()=>controller.abort(),timeoutMs):null;
@@ -66,7 +71,7 @@
         const session=read();
         if(!session)return failure('UNAUTHENTICATED');
         let result;const started=Date.now();
-        try{result=await post(options.fresh===true?{action:kind,session,fresh:true}:{action:kind,session});}catch(_){return failure('OFFLINE');}
+        try{result=await post(options.fresh===true?{action:kind,session,fresh:true}:{action:kind,session},READ_WAIT_MS);}catch(_){return failure('OFFLINE');}
         // Latency line: the whole round trip, and the server's own time when it reports it.
         const ms=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0?Math.round(value):null;
         result.timing={total_ms:Date.now()-started,server_ms:ms(result.server_ms),sheets_ms:ms(result.sheets_ms),cached:result.cached===true};
@@ -106,7 +111,7 @@
         const session=read();
         if(!session)return failure('UNAUTHENTICATED');
         let result;
-        try{result=await post({action:'document.open',session,tab,id,field});}catch(_){return failure('OFFLINE');}
+        try{result=await post({action:'document.open',session,tab,id,field},READ_WAIT_MS);}catch(_){return failure('OFFLINE');}
         if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
         return result;
       },
@@ -115,7 +120,7 @@
         const session=read();
         if(!session)return failure('UNAUTHENTICATED');
         let result;
-        try{result=await post({action:'health',session});}catch(_){return failure('OFFLINE');}
+        try{result=await post({action:'health',session},60000);}catch(_){return failure('OFFLINE');}
         delete result.server_ms;delete result.sheets_ms;
         if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
         return result;
@@ -135,5 +140,5 @@
       }
     };
   }
-  root.PortfolioApi={create,SESSION_KEY,DATA_KEY};
+  root.PortfolioApi={create,SESSION_KEY,DATA_KEY,READ_WAIT_MS};
 })(globalThis);
