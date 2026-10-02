@@ -31,6 +31,8 @@ const recall=()=>{
   return null;
 };
 const failure=code=>({ok:false,schema_version:1,error:{code}});
+// A save: a first try, a short pause, one retry (see write()).
+const SAVE_WAIT_MS=20000,SAVE_RETRY_PAUSE_MS=2000,SAVE_RETRY_WAIT_MS=68000;
 // Well over the slowest normal answer (a first open after the server has been idle).
 const READ_WAIT_MS=20000;
 
@@ -85,8 +87,18 @@ function create(config) {
       if(!['company_compliance.create','company_compliance.update','maintenance.create','maintenance.update','property.update','mortgage.update','tenancy.update','compliance.update','compliance.renew','compliance.activate','mortgage.remortgage','tenancy.end','tenancy.new'].includes(action))return failure('BAD_REQUEST');
       const session=read();
       if(!session)return failure('UNAUTHENTICATED');
+      // A save that gets no answer is sent once more (as in the other two apps): it may have arrived and only
+      // its answer been lost, just after a connection returns. Safe: both tries carry the form's request_id, and
+      // the server applies one id once. Not when this device has no connection at all. 20 s + 68 s keeps the
+      // whole wait within the 90 seconds a save always had.
+      const body={...payload,action,session};
       let result;
-      try{result=await post({...payload,action,session});}catch(_){return failure('OFFLINE');}
+      try{result=await post(body,SAVE_WAIT_MS);}
+      catch(first){
+        if(first&&first.offline===true)return failure('OFFLINE');
+        try{await new Promise(resolve=>root.setTimeout(resolve,SAVE_RETRY_PAUSE_MS));result=await post(body,SAVE_RETRY_WAIT_MS);}
+        catch(_){return failure('OFFLINE');}
+      }
       if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
       return result;
     },
