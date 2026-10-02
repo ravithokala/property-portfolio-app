@@ -17,11 +17,10 @@
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <script src="https://accounts.google.com/gsi/client" async></script>
-  <script defer src="config.js"></script>
   <script defer src="version.js"></script>
   <script defer src="ui.js"></script>
-  <script defer src="api.js"></script>
-  <script defer src="app.js"></script>
+  <!-- app.js is a module: it imports config.js and api.js, and runs after the two scripts above. -->
+  <script type="module" src="app.js"></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>

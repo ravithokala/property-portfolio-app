@@ -1,15 +1,18 @@
 /* Starts the app: Google sign-in, the API adapter and the shell-only service worker. */
-(function (root) {
-  'use strict';
-  // GitHub Pages cannot send frame-ancestors, so the app refuses to run inside another page
-  // (no taps can be tricked through a hidden frame).
-  let framed=false;try{framed=root.top!==root.self;}catch(_){framed=true;}
-  if(framed){root.addEventListener('DOMContentLoaded',()=>{const main=root.document.getElementById('main');
-    if(main){main.textContent='This app cannot be shown inside another page. Open it directly.';main.setAttribute('aria-busy','false');}});return;}
-  const config=root.PortfolioConfig||{};
+import { CONFIG } from './config.js';
+import { PortfolioApi } from './api.js';
+const root=globalThis;
+// GitHub Pages cannot send frame-ancestors, so the app refuses to run inside another page
+// (no taps can be tricked through a hidden frame).
+let framed=false;try{framed=root.top!==root.self;}catch(_){framed=true;}
+if(framed){root.addEventListener('DOMContentLoaded',()=>{const main=root.document.getElementById('main');
+  if(main){main.textContent='This app cannot be shown inside another page. Open it directly.';main.setAttribute('aria-busy','false');}});}
+else start();
+function start() {
+  const config=CONFIG||{};
   const configured=/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(config.apiUrl||'') &&
     /^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(config.clientId||'');
-  const api=configured?root.PortfolioApi.create(config):null;
+  const api=configured?PortfolioApi.create(config):null;
   let signInProblem=null, afterSignIn=null, gisReady=false, confirmDone=null;
   const gis=()=>root.google&&root.google.accounts&&root.google.accounts.id;
 
@@ -130,4 +133,4 @@
     if(refresh)refresh.addEventListener('click',()=>checkForUpdate(true));
     if('serviceWorker' in root.navigator)root.navigator.serviceWorker.register('sw.js').catch(()=>{/* the app works without it */});
   });
-})(globalThis);
+}
