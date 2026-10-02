@@ -2,6 +2,7 @@
    so the portfolio can be viewed offline (RT's decision, 2026-10-02), the last complete answer. Both
    are removed on sign-out or when the session ends.
    A module (2026-10-02): app.js imports it. */
+import { sendRequest } from './request.js';
 const root=globalThis;
 // Named for this app: other apps on the same github.io origin use their own keys.
 const SESSION_KEY='property-portfolio.session';
@@ -33,22 +34,16 @@ const failure=code=>({ok:false,schema_version:1,error:{code}});
 const READ_WAIT_MS=20000;
 
 function create(config) {
-  // A plain-text POST needs no CORS pre-flight, which Apps Script cannot answer.
+  // Sending is ../app-kit's (request.js, the same in all three apps): the plain-text POST that needs no CORS
+  // pre-flight (Apps Script cannot answer one), nothing of the browser's sent along, and the wait.
   // Apps Script can be slow to start, but a request never waits more than 90 seconds.
   // Connected but with no internet (mobile data used up) a request never fails, it hangs. Requests that
   // only read give up after READ_WAIT_MS, so the saved copy is shown as offline instead of "Updating…" for
   // a minute and a half. Saves keep the long wait: the server may still finish one.
+  // Whatever goes wrong (no connection, a busy server, no answer in time, an answer that is not this API's)
+  // is thrown, and each caller below reports it as OFFLINE.
   async function post(body,timeoutMs=90000) {
-    const controller=typeof root.AbortController==='function'?new root.AbortController():null;
-    const timer=controller?root.setTimeout(()=>controller.abort(),timeoutMs):null;
-    let response;
-    try {
-      response=await root.fetch(config.apiUrl,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body:JSON.stringify(body),redirect:'follow',credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer',
-        signal:controller?controller.signal:undefined});
-    } finally {if(timer)root.clearTimeout(timer);}
-    if(!response.ok)throw Error('HTTP '+response.status);
-    const result=await response.json();
+    const result=await sendRequest(config.apiUrl,body,timeoutMs);
     if(!result||typeof result!=='object'||typeof result.ok!=='boolean')throw Error('Unexpected answer');
     return result;
   }
