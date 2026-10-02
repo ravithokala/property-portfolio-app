@@ -566,19 +566,23 @@
         const system=add(main,'section',undefined,'card menu');system.setAttribute('aria-label','System');
         add(system,'h2','System','menu-heading');
         const h=options.health||{},r=h.result,checks=r&&r.ok&&r.data&&Array.isArray(r.data.checks)?r.data.checks:null;
-        const failed=checks?checks.filter(c=>!c.ok).length:0;
-        const status=h.running?'Checking… this can take up to a minute':checks?(failed?failed+' of '+checks.length+' checks failed':'All '+checks.length+' checks passed'+
+        const phone=Array.isArray(h.phone)?h.phone.filter(c=>c&&typeof c.name==='string'&&typeof c.detail==='string'):[];
+        const failed=(checks?checks.filter(c=>!c.ok).length:0)+phone.filter(c=>!c.ok).length,total=(checks?checks.length:0)+phone.length;
+        const status=h.running?'Checking… this can take up to a minute':checks?(failed?failed+' of '+total+' checks failed':'All '+total+' checks passed'+
           (typeof r.data.ms==='number'?' · '+(r.data.ms/1000).toFixed(1)+' s':'')):r?'Could not run the check. Reference: '+(code(r)&&/^[A-Z_]{1,40}$/.test(code(r))?code(r):'UNKNOWN'):
           'Checks the workbook, documents folder, Google sign-in and sessions';
         const run=add(system,'button',undefined,'menu-row');run.type='button';run.setAttribute('data-health','true');if(h.running)run.disabled=true;
         add(run,'span','⚙','menu-icon').setAttribute('aria-hidden','true');
         const text=add(run,'span',undefined,'menu-text');add(text,'span',checks?'Run the system check again':'Run system check','menu-title');
         add(text,'span',status,'menu-status').setAttribute('role','status');
-        if(checks)for(const c of checks){
+        const drawCheck=c=>{
           const line=add(system,'div',undefined,'menu-row static');
           add(line,'span',c.ok?'✓':'✕','menu-icon '+(c.ok?'ok':'fail')).setAttribute('aria-label',c.ok?'Passed':'Failed');
           const t=add(line,'span',undefined,'menu-text');add(t,'span',String(c.name),'menu-title');add(t,'span',String(c.detail),'menu-status');
-        }
+        };
+        if(checks)for(const c of checks)drawCheck(c);
+        // This phone's own checks (../app-kit, as the other two apps), whether or not the server answered.
+        if(phone.length){add(system,'p','This phone','menu-status phone-heading');for(const c of phone)drawCheck(c);}
       }
       if(typeof options.version==='string')add(main,'p','Version '+options.version,'version');
       if(typeof options.timing==='string'&&options.timing)add(main,'p',options.timing,'version timing');
@@ -737,7 +741,11 @@
       // Signed out only once the server says so; nothing while the first answer is on its way.
       doc.getElementById('access').textContent=all?(all.permissions.can_write?'Editor':'View only'):select?'Preview':
         code(problem)==='UNAUTHENTICATED'?'Signed out':'';
-      doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
+      // The header's time is worded by the adapter when it can (../app-kit: "09:14", or "02/10 09:14" when not
+      // today), the same as the other two apps; the preview and the tests fall back to this file's own wording.
+      const seen=all&&!loading&&!refreshing&&typeof adapter.updatedText==='function'&&Number.isFinite(Date.parse(all.observed_at))?
+        adapter.updatedText({lastSynced:Date.parse(all.observed_at),refreshing:false,online:!stale},Date.now()):null;
+      doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':'')+(seen?seen.short:updatedAt(all.observed_at)):'';
       // Offline: say plainly that this is the copy saved on the phone, and from when.
       const savedAt=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'}).format(new Date(value)):'earlier';
       const timing=doc.getElementById('timing');if(timing)timing.textContent=!all?'':stale?'No connection. Showing the copy saved on this phone from '+savedAt(all.observed_at)+'. Changes can’t be saved until you’re back online.':'';
@@ -745,7 +753,8 @@
       if(title)title.textContent=form?(form.kind==='attach'?'Attach':form.quick?form.shortTitle||form.title:form.kind==='maintenance'?mntTitles[form.mode]:
         form.mode==='create'?'Add record':'Edit record'):page()==='property'?route().propertyId:titles[page()]||'Home';
       const refresh=doc.getElementById('refresh');
-      if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');}
+      if(refresh){refresh.disabled=loading||refreshing;refresh.setAttribute('aria-busy',loading||refreshing?'true':'false');
+        refresh.setAttribute('aria-label',seen?seen.label:'Refresh');}
       const tab=['company','compliance'].includes(page())?'more':page()==='property'?'portfolio':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
       options.form=form;options.propertyFilter=propertyFilter;options.wait=wait;options.propertyId=route().propertyId;options.health=health;
@@ -991,8 +1000,10 @@
       const current=health={running:true};paint();
       let result;
       try{result=await adapter.checkHealth();}catch(_){result={ok:false,error:{code:'OFFLINE'}};}
+      let phone=[];
+      if(typeof adapter.phoneChecks==='function'){try{phone=await adapter.phoneChecks();}catch(_){phone=[];}}
       if(health!==current)return;
-      health={result};paint();
+      health={result,phone};paint();
     }
     function reload(){return load();}
     function reset(){all=null;problem=null;health=null;return load();}

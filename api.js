@@ -4,15 +4,16 @@
    A module (2026-10-02): app.js imports it. */
 import { SESSION_KEY, session, saveSession, forgetSession } from './auth.js';
 import { sendRequest } from './request.js';
+import { copyTooOld } from './freshness.js';
 const root=globalThis;
 // The session key is kept by ../app-kit's auth.js (the same in all three apps), under this app's own name
 // (config.js: other apps on the same github.io origin use their own keys). Only a 64-hex key counts.
 const read=session;
 const save=key=>saveSession(key);
 // The last 'all' answer, for opening instantly and viewing offline. Only with a session and for at most
-// 30 days. It survives app updates (an update while offline must not take the data away); the screen
+// 30 days (../app-kit's rule, freshness.js: the same in all three apps). It survives app updates (an update while offline must not take the data away); the screen
 // drops it only if it cannot be drawn.
-const DATA_KEY='property-portfolio.last',DATA_MAX_AGE_MS=30*24*60*60*1000;
+const DATA_KEY='property-portfolio.last';
 const forget=()=>{forgetSession();try{root.localStorage.removeItem(DATA_KEY);}catch(_){/* nothing stored */}};
 const remember=answer=>{
   try{const copy={...answer};delete copy.timing;
@@ -23,7 +24,7 @@ const recall=()=>{
   try{
     const raw=root.localStorage.getItem(DATA_KEY);if(!raw)return null;
     const stored=JSON.parse(raw),answer=stored&&stored.answer;
-    if(read()&&typeof stored.saved_at==='number'&&Date.now()-stored.saved_at<=DATA_MAX_AGE_MS&&Date.now()>=stored.saved_at&&
+    if(read()&&typeof stored.saved_at==='number'&&!copyTooOld(stored.saved_at,Date.now())&&Date.now()>=stored.saved_at&&
       answer&&answer.ok===true&&answer.schema_version===1&&
       answer.data&&typeof answer.data==='object'&&answer.permissions&&typeof answer.observed_at==='string')return answer;
     root.localStorage.removeItem(DATA_KEY);

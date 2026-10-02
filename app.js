@@ -4,6 +4,8 @@ import { PortfolioApi } from './api.js';
 import { init, googleToken, showPrompt, signOutOfGoogle } from './auth.js';
 import { watchForUpdates } from './update.js';
 import { inFrame, FRAMED_MESSAGE } from './guard.js';
+import { updatedText } from './freshness.js';
+import { phoneChecks } from './checks.js';
 const root=globalThis;
 // GitHub Pages cannot send frame-ancestors, so the app refuses to run inside another page
 // (no taps can be tricked through a hidden frame). The check and its wording are ../app-kit's (guard.js).
@@ -42,6 +44,10 @@ function start() {
   }
   const adapter={
     version:root.PortfolioVersion,
+    // ../app-kit's, the same in all three apps: the header's "09:14" wording, and this phone's own lines for
+    // the System check (version, connection, works offline, storage). ui.js is a plain script, so it gets them here.
+    updatedText,
+    phoneChecks:async()=>Object.values(await phoneChecks(root.PortfolioVersion)),
     async load(kind,_scenario,options) {
       if(!api)return {ok:false,schema_version:1,error:{code:'NOT_CONFIGURED'}};
       // Show a refused sign-in once (e.g. an account that is not allowlisted), then offer sign-in again.
