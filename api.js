@@ -7,7 +7,7 @@
    what the screens use: this app's actions, its saved answer, and its answers as the screens read them.
    A module (2026-10-02): app.js imports it. */
 import { SESSION_KEY, session } from './auth.js';
-import { call, startSession, confirmAccount, onSessionEnded, signOut, signOutEverywhere } from './calls.js';
+import { call, startSession, confirmAccount, onSessionEnded, endsAccess, signOut, signOutEverywhere } from './calls.js';
 import { copyTooOld } from './freshness.js';
 const root=globalThis;
 // The session key is kept by ../app-kit's auth.js (the same in all three apps), under this app's own name
@@ -143,5 +143,8 @@ function create() {
     }
   };
 }
-const PortfolioApi={create,SESSION_KEY,DATA_KEY};
+// ../app-kit's rule, in the screens' words: only an ended session or a refused account (the kit's FORBIDDEN,
+// ACCESS_DENIED here) clears what is on screen; any other failed refresh keeps the saved copy.
+const screenEndsAccess=code=>endsAccess(code==='ACCESS_DENIED'?'FORBIDDEN':code);
+const PortfolioApi={create,SESSION_KEY,DATA_KEY,endsAccess:screenEndsAccess};
 export { PortfolioApi };

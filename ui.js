@@ -157,6 +157,8 @@
       if(code(response)==='ACCESS_DENIED'&&options.canSignOut)button(actions,'Use another account','data-signout');
       return;
     }
+    // A refresh that failed while connected: the saved copy stays, with this note above it.
+    if(typeof options.notice==='string'&&options.notice)add(main,'p',options.notice,'note notice').setAttribute('role','alert');
     const recorded=value=>typeof value==='string'&&value?value:'Not recorded';
     // One property filter shared by the list screens; the choice lives in memory only.
     const propertyFilter=(parent,properties,filter)=>{
@@ -686,6 +688,23 @@
     const REFRESH_AFTER_MS=5*60*1000;
     // True while the answer on screen is the device's saved copy (possibly from an older app version).
     let savedCopy=false;
+    // The refusal of the last refresh, while the copy it could not replace is still on screen (not offline).
+    let failed=null;
+    // ../app-kit's rule when the adapter has it; the same two refusals otherwise (the preview and the tests).
+    const endsAccess=value=>typeof adapter.endsAccess==='function'?adapter.endsAccess(value)===true:value==='UNAUTHENTICATED'||value==='ACCESS_DENIED';
+    // What went wrong, in plain words, with the server's fixed code (never data) as a reference.
+    const failureWords={SERVER_UNAVAILABLE:'the server had a problem',RESOURCE_ACCESS_FAILED:'the workbook could not be read (Google may be busy)',
+      RESOURCE_CONFIGURATION_UNAVAILABLE:'the server’s workbook setting needs checking',INVALID_RESOURCE_CONFIGURATION:'the server’s workbook setting needs checking',
+      AUTH_CONFIGURATION_INVALID:'the server’s sign-in settings are incomplete',BAD_REQUEST:'the server did not understand the request (the app may need updating)',
+      INVALID_CANONICAL_INPUT:'the workbook failed a check and needs fixing in the Sheet'};
+    function failedNotice(){
+      if(!failed||!all)return '';
+      const safe=x=>typeof x==='string'&&/^[A-Za-z_-]{1,60}$/.test(x),reference=[failed.code,failed.reason].filter(safe).join(' · ');
+      const reason=(failureWords[failed.code]||'the server refused the request')+(reference?' ('+reference+')':'');
+      const at=Date.parse(all.observed_at);
+      return typeof adapter.refreshFailedText==='function'?adapter.refreshFailedText(reason,Number.isFinite(at)?at:null,Date.now()):
+        'Could not refresh: '+reason+'. Showing the copy from '+updatedAt(all.observed_at)+'.';
+    }
     // The last answer saved on this device (if any) is shown at once; the first load then refreshes it,
     // and with no connection it stays on screen marked "Offline".
     if(typeof adapter.cached==='function'){let saved=null;try{saved=adapter.cached();}catch(_){/* none */}
@@ -744,8 +763,8 @@
       // The header's time is worded by the adapter when it can (../app-kit: "09:14", or "02/10 09:14" when not
       // today), the same as the other two apps; the preview and the tests fall back to this file's own wording.
       const seen=all&&!loading&&!refreshing&&typeof adapter.updatedText==='function'&&Number.isFinite(Date.parse(all.observed_at))?
-        adapter.updatedText({lastSynced:Date.parse(all.observed_at),refreshing:false,online:!stale},Date.now()):null;
-      doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':'')+(seen?seen.short:updatedAt(all.observed_at)):'';
+        adapter.updatedText({lastSynced:Date.parse(all.observed_at),refreshing:false,online:!stale,failed:Boolean(failed)},Date.now()):null;
+      doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':failed?'Not refreshed · ':'')+(seen?seen.short:updatedAt(all.observed_at)):'';
       // Offline: say plainly that this is the copy saved on the phone, and from when.
       const savedAt=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'}).format(new Date(value)):'earlier';
       const timing=doc.getElementById('timing');if(timing)timing.textContent=!all?'':stale?'No connection. Showing the copy saved on this phone from '+savedAt(all.observed_at)+'. Changes can’t be saved until you’re back online.':'';
@@ -758,7 +777,7 @@
       const tab=['company','compliance'].includes(page())?'more':page()==='property'?'portfolio':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
       options.form=form;options.propertyFilter=propertyFilter;options.wait=wait;options.propertyId=route().propertyId;options.health=health;
-      options.timing=all&&!stale?timingText(all):'';
+      options.timing=all&&!stale&&!failed?timingText(all):'';options.notice=failedNotice();
       render(doc,main,response,page(),loading,options);
       wireCompany(response);
       wireMaintenance(response);
@@ -788,10 +807,13 @@
       catch(_){next={ok:false,error:{code:'OFFLINE'}};}
       if(now!==generation)return;
       loading=false;refreshing=false;loadedAt=Date.now();wait=0;waitTimers.forEach(t=>root.clearTimeout(t));waitTimers=[];
-      if(next&&next.ok===true){all=next;problem=null;stale=false;savedCopy=false;}
-      // Offline during a refresh keeps the last answer; any other problem (e.g. signed out) clears it.
-      else if(all&&next&&next.error&&next.error.code==='OFFLINE')stale=true;
-      else {all=null;problem=next||{ok:false,error:{code:'OFFLINE'}};}
+      const refused=next&&next.error&&typeof next.error.code==='string'?next.error.code:'OFFLINE';
+      if(next&&next.ok===true){all=next;problem=null;stale=false;failed=null;savedCopy=false;}
+      // A failed refresh never takes the answer on screen away (../app-kit's rule, the same in all three apps):
+      // it stays, marked offline or with a note saying what went wrong. Only the server ending the session or
+      // refusing the account clears it.
+      else if(all&&!endsAccess(refused)){stale=refused==='OFFLINE';failed=stale?null:{code:refused,reason:next.error.reason};}
+      else {all=null;stale=false;failed=null;problem=next||{ok:false,error:{code:'OFFLINE'}};}
       paint();focusTarget();
     }
     // Company compliance add/edit. One request_id per opened form, reused on retry, so an uncertain
@@ -1006,7 +1028,7 @@
       health={result,phone};paint();
     }
     function reload(){return load();}
-    function reset(){all=null;problem=null;health=null;return load();}
+    function reset(){all=null;problem=null;health=null;stale=false;failed=null;return load();}
     async function signOut(){try{await adapter.signOut();}catch(_){}return reset();}
     // Every device signed in with this account signs out (a lost phone); asks first.
     async function signOutEverywhere(){
