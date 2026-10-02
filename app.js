@@ -81,25 +81,37 @@
     try{const response=await root.fetch('version.js?t='+Date.now(),{cache:'no-store',credentials:'omit'});
       const match=/PortfolioVersion='([^'\n]{1,80})'/.exec(await response.text());latest=match&&match[1];}catch(_){return false;}
     if(!latest||latest===running)return false;
-    const marker='?v='+encodeURIComponent(latest),fresh=marker+'&fresh=1';
-    if(root.location.search===fresh)return false;
-    // Already reloaded for this release but still running an older copy: the phone's copy is stale.
-    // Once: drop the app's caches and worker and load straight from GitHub.
-    if(root.location.search===marker){
-      try{if(root.caches){const keys=await root.caches.keys();await Promise.all(keys.map(key=>root.caches.delete(key)));}
-        const registration=await root.navigator.serviceWorker.getRegistration();if(registration)await registration.unregister();}
-      catch(_){/* reload anyway */}
-      root.location.replace(root.location.pathname+fresh+root.location.hash);
-      return true;
+    const marker='?v='+encodeURIComponent(latest);
+    // Reloaded for this release already: never loop.
+    if(root.location.search===marker)return false;
+    // With a service worker, reload only once the new release's worker is in charge: a reload answered by
+    // the old worker would only show the old copy again. The saved copy is never deleted from here.
+    let registration=null;
+    try{registration=await root.navigator.serviceWorker.getRegistration();}catch(_){/* no worker: plain reload */}
+    if(registration){
+      try{await registration.update();}catch(_){return false;}
+      const next=registration.installing||registration.waiting;
+      if(next){
+        const ready=next.state==='activated'||await new Promise(resolve=>{const timer=root.setTimeout(()=>resolve(false),30000);
+          next.addEventListener('statechange',()=>{if(next.state==='activated'||next.state==='redundant'){root.clearTimeout(timer);resolve(next.state==='activated');}});});
+        if(!ready)return false;
+      } else {
+        // No new worker in sight: reload only if the worker already in charge is the new release.
+        const commit=(/· ([0-9a-f]{7,40})$/.exec(latest)||[])[1],version=registration.active?await workerVersion(registration.active):null;
+        if(!commit||!version||!version.includes('-'+commit+'-'))return false;
+      }
     }
-    // The new release's worker installs its cache; reload once it is in charge (at most 8 seconds).
-    try{const registration=await root.navigator.serviceWorker.getRegistration();
-      if(registration){await registration.update();const worker=registration.installing||registration.waiting;
-        if(worker&&worker.state!=='activated')await new Promise(resolve=>{const timer=root.setTimeout(resolve,8000);
-          worker.addEventListener('statechange',()=>{if(['activated','redundant'].includes(worker.state)){root.clearTimeout(timer);resolve();}});});}}
-    catch(_){/* reload anyway */}
     root.location.replace(root.location.pathname+marker+root.location.hash);
     return true;
+  }
+  // Asks a service worker which release it serves (null if it does not answer within 2 seconds).
+  function workerVersion(worker) {
+    return new Promise(resolve=>{
+      try{const channel=new root.MessageChannel(),timer=root.setTimeout(()=>resolve(null),2000);
+        channel.port1.onmessage=event=>{root.clearTimeout(timer);resolve(event.data&&typeof event.data.version==='string'?event.data.version:null);};
+        worker.postMessage({type:'version'},[channel.port2]);}
+      catch(_){resolve(null);}
+    });
   }
   adapter.checkForUpdate=checkForUpdate;
   root.addEventListener('DOMContentLoaded',()=>{
