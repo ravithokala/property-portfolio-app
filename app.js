@@ -3,12 +3,12 @@ import { CONFIG } from './config.js';
 import { PortfolioApi } from './api.js';
 import { init, googleToken, showPrompt, signOutOfGoogle } from './auth.js';
 import { watchForUpdates } from './update.js';
+import { inFrame, FRAMED_MESSAGE } from './guard.js';
 const root=globalThis;
 // GitHub Pages cannot send frame-ancestors, so the app refuses to run inside another page
-// (no taps can be tricked through a hidden frame).
-let framed=false;try{framed=root.top!==root.self;}catch(_){framed=true;}
-if(framed){root.addEventListener('DOMContentLoaded',()=>{const main=root.document.getElementById('main');
-  if(main){main.textContent='This app cannot be shown inside another page. Open it directly.';main.setAttribute('aria-busy','false');}});}
+// (no taps can be tricked through a hidden frame). The check and its wording are ../app-kit's (guard.js).
+if(inFrame()){root.addEventListener('DOMContentLoaded',()=>{const main=root.document.getElementById('main');
+  if(main){main.textContent=FRAMED_MESSAGE;main.setAttribute('aria-busy','false');}});}
 else start();
 function start() {
   const config=CONFIG||{};
