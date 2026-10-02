@@ -16,7 +16,7 @@ function start() {
   const config=CONFIG||{};
   const configured=/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(config.apiUrl||'') &&
     /^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(config.clientId||'');
-  const api=configured?PortfolioApi.create(config):null;
+  const api=configured?PortfolioApi.create():null;
   let signInProblem=null, afterSignIn=null, listening=false, confirmDone=null;
 
   // Google's button and prompt are ../app-kit's (auth.js, the same in all three apps). This app listens for

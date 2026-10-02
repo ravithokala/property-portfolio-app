@@ -1,20 +1,25 @@
 /* Talks to the thin Apps Script API (ROADMAP PWA-D1). Kept on this device: the app session key and,
    so the portfolio can be viewed offline (RT's decision, 2026-10-02), the last complete answer. Both
    are removed on sign-out or when the session ends.
+   The talking itself is ../app-kit's (calls.js, the same file as the other two apps' api.js): one protocol
+   for all three (a request is { session, action, payload } and, for a save, request_id; a refusal lists
+   errors), the waits, the one retry of a save, and forgetting a session the server has ended. This file is
+   what the screens use: this app's actions, its saved answer, and its answers as the screens read them.
    A module (2026-10-02): app.js imports it. */
-import { SESSION_KEY, session, saveSession, forgetSession } from './auth.js';
-import { sendRequest } from './request.js';
+import { SESSION_KEY, session } from './auth.js';
+import { call, startSession, confirmAccount, onSessionEnded, signOut, signOutEverywhere } from './calls.js';
 import { copyTooOld } from './freshness.js';
 const root=globalThis;
 // The session key is kept by ../app-kit's auth.js (the same in all three apps), under this app's own name
 // (config.js: other apps on the same github.io origin use their own keys). Only a 64-hex key counts.
 const read=session;
-const save=key=>saveSession(key);
 // The last 'all' answer, for opening instantly and viewing offline. Only with a session and for at most
 // 30 days (../app-kit's rule, freshness.js: the same in all three apps). It survives app updates (an update while offline must not take the data away); the screen
 // drops it only if it cannot be drawn.
 const DATA_KEY='property-portfolio.last';
-const forget=()=>{forgetSession();try{root.localStorage.removeItem(DATA_KEY);}catch(_){/* nothing stored */}};
+const forgetAnswer=()=>{try{root.localStorage.removeItem(DATA_KEY);}catch(_){/* nothing stored */}};
+// An expired, revoked or no-longer-allowed session: calls.js drops the key from this device; the saved answer goes with it.
+onSessionEnded(forgetAnswer);
 const remember=answer=>{
   try{const copy={...answer};delete copy.timing;
     root.localStorage.setItem(DATA_KEY,JSON.stringify({saved_at:Date.now(),version:root.PortfolioVersion,answer:copy}));}
@@ -32,123 +37,110 @@ const recall=()=>{
   return null;
 };
 const failure=code=>({ok:false,schema_version:1,error:{code}});
-// A save: a first try, a short pause, one retry (see write()).
-const SAVE_WAIT_MS=20000,SAVE_RETRY_PAUSE_MS=2000,SAVE_RETRY_WAIT_MS=68000;
-// Well over the slowest normal answer (a first open after the server has been idle).
+// Requests that only read give up after 20 seconds (calls.js; config.js lists them): connected but with no
+// internet (mobile data used up) a request never fails, it hangs, and the saved copy is on screen meanwhile.
 const READ_WAIT_MS=20000;
+// The system check reads the whole workbook and builds every screen: one try, a minute.
+const HEALTH_WAIT_MS=60000;
+const VIEWS=['all','home','attention','portfolio','company_compliance','maintenance','compliance'];
+const WRITES=['company_compliance.create','company_compliance.update','maintenance.create','maintenance.update','property.update','mortgage.update','tenancy.update','compliance.update','compliance.renew','compliance.activate','mortgage.remortgage','tenancy.end','tenancy.new'];
 
-function create(config) {
-  // Sending is ../app-kit's (request.js, the same in all three apps): the plain-text POST that needs no CORS
-  // pre-flight (Apps Script cannot answer one), nothing of the browser's sent along, and the wait.
-  // Apps Script can be slow to start, but a request never waits more than 90 seconds.
-  // Connected but with no internet (mobile data used up) a request never fails, it hangs. Requests that
-  // only read give up after READ_WAIT_MS, so the saved copy is shown as offline instead of "Updating…" for
-  // a minute and a half. Saves keep the long wait: the server may still finish one.
-  // Whatever goes wrong (no connection, a busy server, no answer in time, an answer that is not this API's)
-  // is thrown, and each caller below reports it as OFFLINE.
-  async function post(body,timeoutMs=90000) {
-    const result=await sendRequest(config.apiUrl,body,timeoutMs);
-    if(!result||typeof result!=='object'||typeof result.ok!=='boolean')throw Error('Unexpected answer');
-    return result;
-  }
+// An answer as the screens read it. A refusal travels as a list (../app-kit's protocol): the refusal itself
+// first (its code and, for some, `reason`: a short check name), then a validation refusal's issues. The
+// screens read one error: { code, reason, issues }. Two codes are the shared entry point's own words.
+function forScreens(result) {
+  if(result.ok)return result;
+  const first=result.errors[0]||{};
+  let code=typeof first.code==='string'?first.code:'SERVER_UNAVAILABLE';
+  if(code==='FORBIDDEN')code='ACCESS_DENIED';
+  // A failure inside the server: one fixed word, or the one configuration code it may name.
+  else if(code==='INTERNAL')code=/^[A-Z_]{3,40}$/.test(first.message||'')?first.message:'SERVER_UNAVAILABLE';
+  const error={code};
+  if(/^[A-Za-z_-]{1,60}$/.test(first.reason||''))error.reason=first.reason;
+  const issues=result.errors.slice(1).map(issue=>issue&&issue.message).filter(text=>typeof text==='string');
+  if(issues.length)error.issues=issues;
+  return {ok:false,schema_version:1,error};
+}
+// Whatever goes wrong on the way (no connection, a busy server, no answer in time, an answer that is not this
+// API's) is reported as OFFLINE: calls.js throws, or the answer has no ok or no errors to read.
+async function sent(request) {
+  try{
+    const result=await request();
+    if(!result||typeof result!=='object'||typeof result.ok!=='boolean'||(!result.ok&&!Array.isArray(result.errors)))return failure('OFFLINE');
+    return forScreens(result);
+  }catch(_){return failure('OFFLINE');}
+}
+
+function create() {
   return {
     hasSession:()=>read()!==null,
     // The last complete answer saved on this device, or null.
     lastAnswer:()=>recall(),
     // Removes the saved answer only (the session stays): used when it cannot be drawn.
-    forgetAnswer:()=>{try{root.localStorage.removeItem(DATA_KEY);}catch(_){/* nothing stored */}},
+    forgetAnswer,
     // Exchanges a Google ID token (kept in memory only) for this device's app session.
     async signIn(idToken) {
-      let result;
-      try{result=await post({action:'auth.start',id_token:idToken});}catch(_){return failure('OFFLINE');}
-      if(result.ok&&result.data&&/^[0-9a-f]{64}$/.test(result.data.session)){save(result.data.session);return {ok:true};}
-      const answer=failure(result.error&&typeof result.error.code==='string'?result.error.code:'UNAUTHENTICATED');
-      // A short server check name (e.g. "audience"), kept only to show as a reference.
-      if(result.error&&/^[a-z-]{1,40}$/.test(result.error.reason||''))answer.error.reason=result.error.reason;
-      return answer;
+      const result=await sent(()=>startSession(idToken));
+      // The role and expiry the server sends are not needed here: every answer says what this account may do.
+      return result.ok?{ok:true}:result;
     },
     // fresh: ↻ asks the server to read the workbook again instead of its cached read.
     async load(kind,options={}) {
-      if(!['all','home','attention','portfolio','company_compliance','maintenance','compliance'].includes(kind))return failure('BAD_REQUEST');
-      const session=read();
-      if(!session)return failure('UNAUTHENTICATED');
-      let result;const started=Date.now();
-      try{result=await post(options.fresh===true?{action:kind,session,fresh:true}:{action:kind,session},READ_WAIT_MS);}catch(_){return failure('OFFLINE');}
+      if(!VIEWS.includes(kind))return failure('BAD_REQUEST');
+      if(!read())return failure('UNAUTHENTICATED');
+      const started=Date.now();
+      const result=await sent(()=>call(kind,options.fresh===true?{fresh:true}:{}));
+      if(result.error&&result.error.code==='OFFLINE')return result;
       // Latency line: the whole round trip, and the server's own time when it reports it.
       const ms=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0?Math.round(value):null;
       result.timing={total_ms:Date.now()-started,server_ms:ms(result.server_ms),sheets_ms:ms(result.sheets_ms),cached:result.cached===true};
-      delete result.server_ms;delete result.sheets_ms;delete result.cached;
-      // An expired, revoked or no-longer-allowed session is dropped from this device, with the saved answer.
-      if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
+      delete result.server_ms;delete result.sheets_ms;delete result.setup_ms;delete result.cached;
       if(result.ok===true&&kind==='all')remember(result);
       return result;
     },
-    // PWA.4/PWA.5B writes. payload carries request_id (one per form submission), so a retry never writes twice.
+    // PWA.4/PWA.5B writes. payload carries request_id (one per form submission), so a retry never writes twice:
+    // a save that gets no answer is sent once more with the same id (calls.js; it may have arrived and only its
+    // answer been lost), and the server applies one id once. Not when this device has no connection at all.
+    // 20 s + 68 s (config.js) keeps the whole wait within the 90 seconds a save always had.
     async write(action,payload) {
-      if(!['company_compliance.create','company_compliance.update','maintenance.create','maintenance.update','property.update','mortgage.update','tenancy.update','compliance.update','compliance.renew','compliance.activate','mortgage.remortgage','tenancy.end','tenancy.new'].includes(action))return failure('BAD_REQUEST');
-      const session=read();
-      if(!session)return failure('UNAUTHENTICATED');
-      // A save that gets no answer is sent once more (as in the other two apps): it may have arrived and only
-      // its answer been lost, just after a connection returns. Safe: both tries carry the form's request_id, and
-      // the server applies one id once. Not when this device has no connection at all. 20 s + 68 s keeps the
-      // whole wait within the 90 seconds a save always had.
-      const body={...payload,action,session};
-      let result;
-      try{result=await post(body,SAVE_WAIT_MS);}
-      catch(first){
-        if(first&&first.offline===true)return failure('OFFLINE');
-        try{await new Promise(resolve=>root.setTimeout(resolve,SAVE_RETRY_PAUSE_MS));result=await post(body,SAVE_RETRY_WAIT_MS);}
-        catch(_){return failure('OFFLINE');}
-      }
-      if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
-      return result;
+      if(!WRITES.includes(action))return failure('BAD_REQUEST');
+      if(!read())return failure('UNAUTHENTICATED');
+      const {request_id:requestId,...fields}=payload;
+      return sent(()=>call(action,fields,{requestId}));
     },
-    // PWA.9B: attach a file to a record (up to 10 MB; slow connections get three minutes).
+    // PWA.9B: attach a file to a record (up to 10 MB; slow connections get three minutes, one try).
     async uploadDocument(payload) {
-      const session=read();
-      if(!session)return failure('UNAUTHENTICATED');
-      let result;
-      try{result=await post({...payload,action:'document.upload',session},180000);}catch(_){return failure('OFFLINE');}
-      if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
-      return result;
+      if(!read())return failure('UNAUTHENTICATED');
+      const {request_id:requestId,...fields}=payload;
+      return sent(()=>call('document.upload',fields,{requestId}));
     },
     // PWA.9B: confirms the Google account on this device before an upload (the token goes straight to the server).
     async confirmSignIn(idToken) {
-      const session=read();
-      if(!session)return failure('UNAUTHENTICATED');
-      try{return await post({action:'auth.confirm',session,id_token:idToken});}catch(_){return failure('OFFLINE');}
+      if(!read())return failure('UNAUTHENTICATED');
+      return sent(()=>confirmAccount(idToken));
     },
     // PWA.9A: a Drive link for a record's document (both users).
     async openDocument(tab,id,field) {
-      const session=read();
-      if(!session)return failure('UNAUTHENTICATED');
-      let result;
-      try{result=await post({action:'document.open',session,tab,id,field},READ_WAIT_MS);}catch(_){return failure('OFFLINE');}
-      if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
-      return result;
+      if(!read())return failure('UNAUTHENTICATED');
+      return sent(()=>call('document.open',{tab,id,field}));
     },
     // System check on More (editor only, read-only on the server).
     async health() {
-      const session=read();
-      if(!session)return failure('UNAUTHENTICATED');
-      let result;
-      try{result=await post({action:'health',session},60000);}catch(_){return failure('OFFLINE');}
-      delete result.server_ms;delete result.sheets_ms;
-      if(!result.ok&&result.error&&['UNAUTHENTICATED','ACCESS_DENIED'].includes(result.error.code))forget();
+      if(!read())return failure('UNAUTHENTICATED');
+      const result=await sent(()=>call('health',{},{timeoutMs:HEALTH_WAIT_MS}));
+      delete result.server_ms;delete result.sheets_ms;delete result.setup_ms;
       return result;
     },
-    // Ends every session of this account (e.g. a lost phone), then this device's key.
+    // Ends every session of this account (e.g. a lost phone), then this device's key and saved answer.
     async signOutEverywhere() {
-      const session=read();
-      if(!session)return failure('UNAUTHENTICATED');
-      let result;
-      try{result=await post({action:'auth.end_all',session});}catch(_){return failure('OFFLINE');}
-      if(result.ok||(result.error&&result.error.code==='UNAUTHENTICATED'))forget();
+      if(!read())return failure('UNAUTHENTICATED');
+      const result=await sent(signOutEverywhere);
+      if(result.ok||(result.error&&result.error.code==='UNAUTHENTICATED'))forgetAnswer();
       return result;
     },
     async signOut() {
-      const session=read();forget();
-      if(session)await post({action:'auth.end',session}).catch(()=>{/* offline: the key is gone here anyway */});
+      forgetAnswer();
+      await signOut();
     }
   };
 }
