@@ -2,6 +2,7 @@
 import { CONFIG } from './config.js';
 import { PortfolioApi } from './api.js';
 import { init, googleToken, showPrompt, signOutOfGoogle } from './auth.js';
+import { watchForUpdates } from './update.js';
 const root=globalThis;
 // GitHub Pages cannot send frame-ancestors, so the app refuses to run inside another page
 // (no taps can be tricked through a hidden frame).
@@ -70,66 +71,20 @@ function start() {
     }
   };
   if(!api)delete adapter.signOut;
-  // A home-screen app is resumed, not reloaded, so it could keep showing an old version. When the
-  // app comes back into view or ↻ is tapped, a newer published version.js reloads the page. The URL
-  // names the version being loaded (no device storage), so a stale copy cannot reload in a loop.
-  let checkedAt=0;
-  async function checkForUpdate(force) {
-    const running=root.PortfolioVersion,doc=root.document;
-    if(typeof running!=='string'||running==='development'||typeof root.fetch!=='function')return false;
-    if(!force&&Date.now()-checkedAt<60000)return false;
-    checkedAt=Date.now();
-    // Never throw away a half-filled form.
-    if(doc&&typeof doc.querySelector==='function'&&doc.querySelector('main form'))return false;
-    let latest=null;
-    // A unique query so neither the browser nor GitHub's cache (up to 10 minutes) answers with an old copy.
-    // Given up on after 10 seconds: with no internet behind the connection the request would hang.
-    const stop=typeof root.AbortController==='function'?new root.AbortController():null,timer=stop?root.setTimeout(()=>stop.abort(),10000):null;
-    try{const response=await root.fetch('version.js?t='+Date.now(),{cache:'no-store',credentials:'omit',signal:stop?stop.signal:undefined});
-      const match=/PortfolioVersion='([^'\n]{1,80})'/.exec(await response.text());latest=match&&match[1];}catch(_){return false;}
-    finally{if(timer)root.clearTimeout(timer);}
-    if(!latest||latest===running)return false;
-    const marker='?v='+encodeURIComponent(latest);
-    // Reloaded for this release already: never loop.
-    if(root.location.search===marker)return false;
-    // With a service worker, reload only once the new release's worker is in charge: a reload answered by
-    // the old worker would only show the old copy again. The saved copy is never deleted from here.
-    let registration=null;
-    try{registration=await root.navigator.serviceWorker.getRegistration();}catch(_){/* no worker: plain reload */}
-    if(registration){
-      try{await registration.update();}catch(_){return false;}
-      const next=registration.installing||registration.waiting;
-      if(next){
-        const ready=next.state==='activated'||await new Promise(resolve=>{const timer=root.setTimeout(()=>resolve(false),30000);
-          next.addEventListener('statechange',()=>{if(next.state==='activated'||next.state==='redundant'){root.clearTimeout(timer);resolve(next.state==='activated');}});});
-        if(!ready)return false;
-      } else {
-        // No new worker in sight: reload only if the worker already in charge is the new release.
-        const commit=(/· ([0-9a-f]{7,40})$/.exec(latest)||[])[1],version=registration.active?await workerVersion(registration.active):null;
-        if(!commit||!version||!version.includes('-'+commit+'-'))return false;
-      }
-    }
-    root.location.replace(root.location.pathname+marker+root.location.hash);
-    return true;
-  }
-  // Asks a service worker which release it serves (null if it does not answer within 2 seconds).
-  function workerVersion(worker) {
-    return new Promise(resolve=>{
-      try{const channel=new root.MessageChannel(),timer=root.setTimeout(()=>resolve(null),2000);
-        channel.port1.onmessage=event=>{root.clearTimeout(timer);resolve(event.data&&typeof event.data.version==='string'?event.data.version:null);};
-        worker.postMessage({type:'version'},[channel.port2]);}
-      catch(_){resolve(null);}
-    });
-  }
-  adapter.checkForUpdate=checkForUpdate;
+  // A home-screen app is resumed, not reloaded, so it could keep showing an old version. When the app
+  // opens, comes back into view or ↻ is tapped, a newer published version.js reloads the page into it, once
+  // the new release's service worker is in charge; never over a half-filled form, never in a loop. The check
+  // is ../app-kit's (update.js): this app's own design, now the same file in all three apps.
+  let checkNow=null;
+  adapter.checkForUpdate=force=>checkNow?checkNow(force):Promise.resolve(false);
   root.addEventListener('DOMContentLoaded',()=>{
     root.PortfolioUi.mount(root.document,adapter);
     const doc=root.document;
-    // The app opens from its cached release, so check for a newer one straight away too.
-    checkForUpdate(false);
-    if(doc&&typeof doc.addEventListener==='function')doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')checkForUpdate(false);});
+    // Starts watching, and checks straight away: the app opens from its cached release.
+    checkNow=watchForUpdates({running:root.PortfolioVersion,
+      busy:()=>Boolean(doc&&typeof doc.querySelector==='function'&&doc.querySelector('main form'))});
     const refresh=doc&&typeof doc.getElementById==='function'?doc.getElementById('refresh'):null;
-    if(refresh)refresh.addEventListener('click',()=>checkForUpdate(true));
+    if(refresh)refresh.addEventListener('click',()=>checkNow(true));
     if('serviceWorker' in root.navigator)root.navigator.serviceWorker.register('sw.js').catch(()=>{/* the app works without it */});
   });
 }
