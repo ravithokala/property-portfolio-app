@@ -3,7 +3,7 @@
    A release opens from its own cache, filled completely when this worker installs, so the app does
    not wait for GitHub on every open. Only the release check (version.js with a query) goes to the network:
    it is how app.js notices a new release, which installs a new worker and cache before the page reloads. */
-const VERSION='shell-1fcbf8c-ecc1474e2617';
+const VERSION='shell-af0914c-4e8daf8bbe40';
 const SHELL=['./','index.html','styles.css','config.js','version.js','ui.js','api.js','app.js',
   'manifest.webmanifest','icons/icon.svg','icons/icon-192.png','icons/apple-touch-icon.png'];
 
@@ -38,9 +38,13 @@ self.addEventListener('message',event=>{
   if(event.data&&event.data.type==='version'&&event.ports&&event.ports[0])event.ports[0].postMessage({version:VERSION});
 });
 
+// Only this app's own earlier releases are removed. The other apps on this origin (the family calendar,
+// household admin) keep their saved copies in the same cache storage, under other names: until 2026-10-02
+// every release here deleted them, and those apps could not open without a connection until next opened online.
+const OWN_CACHE=/^shell-(development|[0-9a-f]{7,40}-[0-9a-f]{12})$/;
 self.addEventListener('activate',event=>{
   event.waitUntil(caches.keys()
-    .then(keys=>Promise.all(keys.filter(key=>key!==VERSION).map(key=>caches.delete(key))))
+    .then(keys=>Promise.all(keys.filter(key=>key!==VERSION&&OWN_CACHE.test(key)).map(key=>caches.delete(key))))
     .then(()=>self.clients.claim()));
 });
 
