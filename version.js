@@ -1,2 +1,2 @@
 /* Stamped by scripts/publish-pwa.sh. */
-globalThis.PortfolioVersion='2 Oct 2026 · e3da3e8';
+globalThis.PortfolioVersion='2 Oct 2026 · 4bd7ad1';

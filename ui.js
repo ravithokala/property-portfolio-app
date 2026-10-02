@@ -94,12 +94,13 @@
     return day(at)===day(new Date())?new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'}).format(at):
       new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',timeZone:'Europe/London'}).format(at);
   }
-  // "Updated 17:07 · 4.2 s · server 2.1 s (sheets 1.4 s)": where a slow load spends its time.
+  // "Last load 4.2 s · server 2.1 s (sheets 1.4 s)": where a slow load spends its time. Shown under the
+  // version in More (RT, 2026-10-02: the same place in all three apps); the header says when it was updated.
   function timingText(response){
     const t=response&&response.timing;
     if(!t||typeof t.total_ms!=='number')return '';
     const s=value=>(value/1000).toFixed(1)+' s';
-    return ['Updated '+updatedAt(response.observed_at),s(t.total_ms),
+    return ['Last load '+s(t.total_ms),
       typeof t.server_ms==='number'?'server '+s(t.server_ms)+(typeof t.sheets_ms==='number'?' (sheets '+s(t.sheets_ms)+')':t.cached?' (cached)':''):''].filter(Boolean).join(' · ');
   }
   const titles={home:'Home',attention:'Attention',portfolio:'Portfolio',more:'More',company:'Company compliance',maintenance:'Maintenance',compliance:'Compliance',property:'Property'};
@@ -580,6 +581,7 @@
         }
       }
       if(typeof options.version==='string')add(main,'p','Version '+options.version,'version');
+      if(typeof options.timing==='string'&&options.timing)add(main,'p',options.timing,'version timing');
       return;
     }
     const full=page==='attention',data=response.data,attentionData=full?data:data.attention;
@@ -738,7 +740,7 @@
       doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':'')+updatedAt(all.observed_at):'';
       // Offline: say plainly that this is the copy saved on the phone, and from when.
       const savedAt=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'}).format(new Date(value)):'earlier';
-      const timing=doc.getElementById('timing');if(timing)timing.textContent=!all?'':stale?'No connection. Showing the copy saved on this phone from '+savedAt(all.observed_at)+'. Changes can’t be saved until you’re back online.':timingText(all);
+      const timing=doc.getElementById('timing');if(timing)timing.textContent=!all?'':stale?'No connection. Showing the copy saved on this phone from '+savedAt(all.observed_at)+'. Changes can’t be saved until you’re back online.':'';
       const title=doc.getElementById('screen-title');
       if(title)title.textContent=form?(form.kind==='attach'?'Attach':form.quick?form.shortTitle||form.title:form.kind==='maintenance'?mntTitles[form.mode]:
         form.mode==='create'?'Add record':'Edit record'):page()==='property'?route().propertyId:titles[page()]||'Home';
@@ -747,6 +749,7 @@
       const tab=['company','compliance'].includes(page())?'more':page()==='property'?'portfolio':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
       options.form=form;options.propertyFilter=propertyFilter;options.wait=wait;options.propertyId=route().propertyId;options.health=health;
+      options.timing=all&&!stale?timingText(all):'';
       render(doc,main,response,page(),loading,options);
       wireCompany(response);
       wireMaintenance(response);
