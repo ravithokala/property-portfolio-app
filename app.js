@@ -6,6 +6,7 @@ import { watchForUpdates } from './update.js';
 import { inFrame, FRAMED_MESSAGE } from './guard.js';
 import { updatedText, refreshFailedText } from './freshness.js';
 import { phoneChecks } from './checks.js';
+import { watchInstall, installState, install, installHint, onInstallChange } from './install.js';
 const root=globalThis;
 // GitHub Pages cannot send frame-ancestors, so the app refuses to run inside another page
 // (no taps can be tricked through a hidden frame). The check and its wording are ../app-kit's (guard.js).
@@ -13,6 +14,8 @@ if(inFrame()){root.addEventListener('DOMContentLoaded',()=>{const main=root.docu
   if(main){main.textContent=FRAMED_MESSAGE;main.setAttribute('aria-busy','false');}});}
 else start();
 function start() {
+  // Chrome offers to install once, early: listen before anything else (../app-kit's install.js).
+  watchInstall();
   const config=CONFIG||{};
   const configured=/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(config.apiUrl||'') &&
     /^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(config.clientId||'');
@@ -52,6 +55,9 @@ function start() {
     refreshFailedText,
     endsAccess:PortfolioApi.endsAccess,
     phoneChecks:async()=>Object.values(await phoneChecks(root.PortfolioVersion)),
+    // ../app-kit's Install button (the same in all four apps): Android Chrome's ⋮ menu installs only one app per
+    // site, the page's own install prompt does not. ui.js draws it at the bottom of More.
+    installState,installHint,install,onInstallChange,
     async load(kind,_scenario,options) {
       if(!api)return {ok:false,schema_version:1,error:{code:'NOT_CONFIGURED'}};
       // Show a refused sign-in once (e.g. an account that is not allowlisted), then offer sign-in again.

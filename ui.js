@@ -586,6 +586,22 @@
         // This phone's own checks (../app-kit, as the other two apps), whether or not the server answered.
         if(phone.length){add(system,'p','This phone','menu-status phone-heading');for(const c of phone)drawCheck(c);}
       }
+      // Install this app, at the bottom (RT, 2026-10-04; ../app-kit's install.js, handed over by app.js): Android
+      // Chrome's ⋮ menu installs only one app per site. Nothing once the app runs from its icon.
+      const inst=options.install;
+      if(inst&&(inst.state==='ready'||inst.state==='unavailable')){
+        const box=add(main,'section',undefined,'card menu');box.setAttribute('aria-label','Install this app');
+        add(box,'h2','Install this app','menu-heading');
+        if(inst.state==='ready'){
+          const go=add(box,'button',undefined,'menu-row');go.type='button';go.setAttribute('data-install','true');
+          add(go,'span','⬇','menu-icon').setAttribute('aria-hidden','true');
+          const text=add(go,'span',undefined,'menu-text');add(text,'span','Install this app','menu-title');
+          add(text,'span','Adds Portfolio to your home screen, so it opens full screen','menu-status');
+        }else{
+          const line=add(box,'div',undefined,'menu-row static');
+          add(add(line,'span',undefined,'menu-text'),'span',typeof inst.hint==='string'?inst.hint:'','menu-status');
+        }
+      }
       if(typeof options.version==='string')add(main,'p','Version '+options.version,'version');
       if(typeof options.timing==='string'&&options.timing)add(main,'p',options.timing,'version timing');
       return;
@@ -731,6 +747,8 @@
       canCheckHealth:typeof adapter.checkHealth==='function',version:adapter.version,form:null,propertyFilter:''};
     // The last System check on More (memory only): null, {running:true} or {result}.
     let health=null;
+    // Chrome's install offer arrives after More may be drawn: draw More again when it does.
+    if(typeof adapter.onInstallChange==='function')adapter.onInstallChange(()=>{if(page()==='more')paint();});
     // Each screen's answer is the matching part of 'all', in the shape its own action returns.
     function current(){
       if(problem)return problem;
@@ -777,6 +795,7 @@
       const tab=['company','compliance'].includes(page())?'more':page()==='property'?'portfolio':page();
       for(const link of doc.querySelectorAll('[data-page]')){if(link.getAttribute('data-page')===tab)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
       options.form=form;options.propertyFilter=propertyFilter;options.wait=wait;options.propertyId=route().propertyId;options.health=health;
+      options.install=typeof adapter.installState==='function'?{state:adapter.installState(),hint:typeof adapter.installHint==='function'?adapter.installHint():''}:null;
       options.timing=all&&!stale&&!failed?timingText(all):'';options.notice=failedNotice();
       render(doc,main,response,page(),loading,options);
       wireCompany(response);
@@ -792,6 +811,7 @@
       wireAttach();
       const everywhere=main.querySelector('[data-signout-all]');if(everywhere)everywhere.addEventListener('click',signOutEverywhere);
       const healthButton=main.querySelector('[data-health]');if(healthButton)healthButton.addEventListener('click',checkHealth);
+      const installButton=main.querySelector('[data-install]');if(installButton)installButton.addEventListener('click',()=>{adapter.install().then(()=>paint(),()=>paint());});
       const host=main.querySelector('[data-signin]');if(host&&adapter.renderSignIn)adapter.renderSignIn(host,reload);
     }
     // With data already shown, a refresh keeps it on screen and only the header says "Updating…".
