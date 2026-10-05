@@ -702,7 +702,7 @@
   function mount(doc,adapter) {
     const main=doc.getElementById('main'),select=doc.getElementById('scenario');
     // One 'all' answer serves every screen (memory only). problem holds a failed answer instead.
-    let all=null,problem=null,loading=true,refreshing=false,stale=false,loadedAt=0,generation=0,form=null,propertyFilter='',wait=0,waitTimers=[];
+    let all=null,problem=null,loading=true,refreshing=false,stale=false,unreached=false,loadedAt=0,generation=0,form=null,propertyFilter='',wait=0,waitTimers=[];
     const REFRESH_AFTER_MS=5*60*1000;
     // True while the answer on screen is the device's saved copy (possibly from an older app version).
     let savedCopy=false;
@@ -771,7 +771,7 @@
         if(!savedCopy)throw error;
         savedCopy=false;all=null;form=null;
         if(typeof adapter.dropCached==='function'){try{adapter.dropCached();}catch(_){/* nothing to drop */}}
-        if(refreshing){refreshing=false;loading=true;}else{problem={ok:false,error:{code:'OFFLINE'}};stale=false;}
+        if(refreshing){refreshing=false;loading=true;}else{problem={ok:false,error:{code:'OFFLINE'}};stale=false;unreached=false;}
         paintNow();
       }
     }
@@ -783,11 +783,12 @@
       // The header's time is worded by the adapter when it can (../app-kit: "09:14", or "02/10 09:14" when not
       // today), the same as the other two apps; the preview and the tests fall back to this file's own wording.
       const seen=all&&!loading&&!refreshing&&typeof adapter.updatedText==='function'&&Number.isFinite(Date.parse(all.observed_at))?
-        adapter.updatedText({lastSynced:Date.parse(all.observed_at),refreshing:false,online:!stale,failed:Boolean(failed)},Date.now()):null;
-      doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale?'Offline · ':failed?'Not refreshed · ':'')+(seen?seen.short:updatedAt(all.observed_at)):'';
-      // Offline: say plainly that this is the copy saved on the phone, and from when.
+        adapter.updatedText({lastSynced:Date.parse(all.observed_at),refreshing:false,online:!stale||unreached,failed:Boolean(failed)||unreached},Date.now()):null;
+      doc.getElementById('freshness').textContent=refreshing?'Updating…':all&&!loading?(stale&&!unreached?'Offline · ':stale||failed?'Not refreshed · ':'')+(seen?seen.short:updatedAt(all.observed_at)):'';
+      // Offline: say plainly that this is the copy saved on the phone, and from when. With a connection but no
+      // answer (no data left, Google busy), say that instead of "no connection".
       const savedAt=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'}).format(new Date(value)):'earlier';
-      const timing=doc.getElementById('timing');if(timing)timing.textContent=!all?'':stale?'No connection. Showing the copy saved on this phone from '+savedAt(all.observed_at)+'. Changes can’t be saved until you’re back online.':'';
+      const timing=doc.getElementById('timing');if(timing)timing.textContent=!all?'':stale&&unreached?'No answer from the server. Showing the copy saved on this phone from '+savedAt(all.observed_at)+'. Tap ↻ to try again.':stale?'No connection. Showing the copy saved on this phone from '+savedAt(all.observed_at)+'. Changes can’t be saved until you’re back online.':'';
       const title=doc.getElementById('screen-title');
       if(title)title.textContent=form?(form.kind==='attach'?'Attach':form.quick?form.shortTitle||form.title:form.kind==='maintenance'?mntTitles[form.mode]:
         form.mode==='create'?'Add record':'Edit record'):page()==='property'?route().propertyId:titles[page()]||'Home';
@@ -830,12 +831,12 @@
       if(now!==generation)return;
       loading=false;refreshing=false;loadedAt=Date.now();wait=0;waitTimers.forEach(t=>root.clearTimeout(t));waitTimers=[];
       const refused=next&&next.error&&typeof next.error.code==='string'?next.error.code:'OFFLINE';
-      if(next&&next.ok===true){all=next;problem=null;stale=false;failed=null;savedCopy=false;}
+      if(next&&next.ok===true){all=next;problem=null;stale=false;unreached=false;failed=null;savedCopy=false;}
       // A failed refresh never takes the answer on screen away (../app-kit's rule, the same in all three apps):
       // it stays, marked offline or with a note saying what went wrong. Only the server ending the session or
       // refusing the account clears it.
-      else if(all&&!endsAccess(refused)){stale=refused==='OFFLINE';failed=stale?null:{code:refused,reason:next.error.reason};}
-      else {all=null;stale=false;failed=null;problem=next||{ok:false,error:{code:'OFFLINE'}};}
+      else if(all&&!endsAccess(refused)){stale=refused==='OFFLINE';unreached=stale&&Boolean(root.navigator)&&root.navigator.onLine===true;failed=stale?null:{code:refused,reason:next.error.reason};}
+      else {all=null;stale=false;unreached=false;failed=null;problem=next||{ok:false,error:{code:'OFFLINE'}};}
       paint();focusTarget();
     }
     // Company compliance add/edit. One request_id per opened form, reused on retry, so an uncertain
@@ -1050,7 +1051,7 @@
       health={result,phone};paint();
     }
     function reload(){return load();}
-    function reset(){all=null;problem=null;health=null;stale=false;failed=null;return load();}
+    function reset(){all=null;problem=null;health=null;stale=false;unreached=false;failed=null;return load();}
     async function signOut(){try{await adapter.signOut();}catch(_){}return reset();}
     // Every device signed in with this account signs out (a lost phone); asks first.
     async function signOutEverywhere(){

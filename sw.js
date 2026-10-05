@@ -6,7 +6,7 @@
    Only this top part is this app's own. The logic below the marker line is ../app-kit's (scripts/kit.json):
    this app's design, now shared with the family calendar and household admin. Never edit it here.
    VERSION is replaced at publish; LEGACY matches the names this app's caches had before they were named by its path. */
-const VERSION='shell-6653d36-c7e80ca536c7';
+const VERSION='shell-1b26eca-e4fdb6ac2992';
 const SHELL=['./','index.html','styles.css','config.js','version.js','ui.js','api.js','auth.js','request.js','calls.js','update.js','guard.js','freshness.js','checks.js','problems.js','install.js','app.js',
   'manifest.webmanifest','icons/icon.svg','icons/icon-192.png','icons/apple-touch-icon.png'];
 const LEGACY=/^shell-(development|[0-9a-f]{7,40}-[0-9a-f]{12})$/;
