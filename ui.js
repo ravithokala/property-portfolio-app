@@ -581,6 +581,8 @@
           const line=add(system,'div',undefined,'menu-row static');
           add(line,'span',c.ok?'✓':'✕','menu-icon '+(c.ok?'ok':'fail')).setAttribute('aria-label',c.ok?'Passed':'Failed');
           const t=add(line,'span',undefined,'menu-text');add(t,'span',String(c.name),'menu-title');add(t,'span',String(c.detail),'menu-status');
+          // A short list under the line (Failed requests: ../app-kit's problems.js), text only.
+          if(Array.isArray(c.items))for(const i of c.items.filter(x=>typeof x==='string').slice(0,10))add(t,'span','· '+i,'menu-status check-item');
         };
         if(checks)for(const c of checks)drawCheck(c);
         // This phone's own checks (../app-kit, as the other two apps), whether or not the server answered.
