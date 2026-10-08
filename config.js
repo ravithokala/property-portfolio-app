@@ -9,7 +9,7 @@ const CONFIG=Object.freeze({
   storage:'property-portfolio',
   /** This app shows its own sign-in screen (../app-kit's calls.js): signed out is an answer, not a wait for Google. */
   ownSignIn:true,
-  /** What kind each action is (calls.js). `reads` only read: they give up after 20 seconds, and the saved copy
+  /** What kind each action is (calls.js). `reads` only read: they wait 45 seconds and are tried once more, and the saved copy
       stays on screen. `slow` take long by nature (an upload): one try of three minutes. Every other action is a
       save: an id, a first try, a pause, one retry with the same id. A save here reads the whole workbook, writes
       and reads back, so its two tries wait longer than the other apps': 20 s and 68 s (90 s in all). */

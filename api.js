@@ -37,7 +37,7 @@ const recall=()=>{
   return null;
 };
 const failure=code=>({ok:false,schema_version:1,error:{code}});
-// Requests that only read give up after 20 seconds (calls.js; config.js lists them): connected but with no
+// Requests that only read wait 45 seconds and are tried once more (calls.js; config.js lists them): connected but with no
 // internet (mobile data used up) a request never fails, it hangs, and the saved copy is on screen meanwhile.
 // The system check reads the whole workbook and builds every screen: one try, a minute.
 const HEALTH_WAIT_MS=60000;
