@@ -42,7 +42,7 @@ const failure=code=>({ok:false,schema_version:1,error:{code}});
 // The system check reads the whole workbook and builds every screen: one try, a minute.
 const HEALTH_WAIT_MS=60000;
 const VIEWS=['all','home','attention','portfolio','company_compliance','maintenance','compliance'];
-const WRITES=['company_compliance.create','company_compliance.update','maintenance.create','maintenance.update','property.update','mortgage.update','tenancy.update','compliance.update','compliance.renew','compliance.activate','mortgage.remortgage','tenancy.end','tenancy.new'];
+const WRITES=['company_compliance.create','company_compliance.update','maintenance.create','maintenance.update','property.update','mortgage.update','tenancy.update','compliance.update','compliance.renew','compliance.activate','compliance.create','mortgage.remortgage','tenancy.end','tenancy.new'];
 
 // An answer as the screens read it. A refusal travels as a list (../app-kit's protocol): the refusal itself
 // first (its code and, for some, `reason`: a short check name), then a validation refusal's issues. The

@@ -58,7 +58,11 @@
   // PWA.8B Renew: the boxes each certificate type uses (every renewal field is still sent; unused ones blank).
   const renewAll=['certificate_reference','co_alarms_checked','cost','effective_date','energy_rating','energy_score','expiry_date',
     'inspection_date','potential_energy_rating','potential_energy_score','provider','smoke_alarms_checked','verified'];
-  function renewFieldsFor(type){
+  function renewFieldsFor(type,adding){
+    // The landlord register (Renters' Rights Act): a yearly registration, not a certificate.
+    if(type==='landlord-register')return [['expiry_date',adding?'Register by, or renewal date if already registered':'Renewal date','date'],
+      ['inspection_date','Registered on','date'],['certificate_reference','Property registration number','text'],['cost','Fee (£)','money'],
+      ['verified','I have checked this registration','checkbox']];
     const provider={'gas-safety':'Engineer','eicr':'Electrician','epc':'Assessor','insurance':'Insurer'}[type]||'Provider';
     const fields=[['expiry_date',type==='insurance'?'Renewal date':'New expiry date','date']];
     if(type!=='insurance')fields.push(['inspection_date','Inspection / issue date','date']);
@@ -232,14 +236,16 @@
     const metricList=(parent,entries)=>{const dl=add(parent,'dl',undefined,'metrics');for(const [label,value] of entries){const m=add(dl,'div');add(m,'dt',label);add(m,'dd',value);}return dl;};
     // Certificates: one row per record in a fixed type order, the type as the title, the next (pending)
     // record of that property and type nested under it, and only the actions that apply.
-    const typeOrder=['gas-safety','eicr','epc','insurance','alarms','other'];
+    const typeOrder=['gas-safety','eicr','epc','insurance','alarms','landlord-register','other'];
     const typeRank=type=>{const i=typeOrder.indexOf(type);return i<0?typeOrder.length:i;};
     const asLink=el=>{if(el)el.className='text-link';return el;};
-    const docWord=type=>type==='insurance'?'policy':'certificate';
+    const docWord=type=>type==='insurance'?'policy':type==='landlord-register'?'registration':'certificate';
+    // A landlord register record with no registration date yet is the "register by" reminder.
+    const unregistered=r=>r.compliance_type==='landlord-register'&&!r.inspection_date&&!r.issue_date;
     const certActions=(parent,r)=>{
       const row=add(parent,'div',undefined,'cert-actions');
       if(r.status==='pending')quickButton(row,'Make current','activate',r.compliance_id);
-      else if(r.status==='current')quickButton(row,'Renew','renew',r.compliance_id);
+      else if(r.status==='current')quickButton(row,unregistered(r)?'Record registration':'Renew','renew',r.compliance_id);
       asLink(docButton(row,'Open '+docWord(r.compliance_type),'Compliance',r.compliance_id,'document',r.document));
       // Attach when there is no document; a quiet Replace link when there is.
       const attach=attachButton(row,'Attach '+docWord(r.compliance_type),'Compliance',r.compliance_id,'document',r.version,r.document);
@@ -249,7 +255,7 @@
     const certFacts=r=>{
       const facts=[];
       if(r.energy_rating)facts.push('EPC '+r.energy_rating+(r.energy_score?' ('+r.energy_score+')':''));
-      if(r.issue_date||r.inspection_date)facts.push((r.inspection_date?'Inspected ':'Issued ')+date(r.inspection_date||r.issue_date));
+      if(r.issue_date||r.inspection_date)facts.push((r.compliance_type==='landlord-register'?'Registered ':r.inspection_date?'Inspected ':'Issued ')+date(r.inspection_date||r.issue_date));
       facts.push(...[r.certificate_reference,r.cost?costText(r.cost):'',r.compliance_id].filter(Boolean));
       if(r.smoke_alarms_checked===true)facts.push('Smoke alarms checked');if(r.co_alarms_checked===true)facts.push('CO alarms checked');
       return facts.join(' · ');
@@ -260,10 +266,11 @@
       add(head,'span',(r.status==='pending'?'Next '+docWord(r.compliance_type)+' · ':'')+words(r.compliance_type),'attn-title');
       const days=r.days_to_expiry,live=r.group!=='history'&&r.status==='current'&&typeof days==='number';
       if(live){const level=r.level&&Object.hasOwn(labels,r.level)?r.level:'neutral',pill=add(head,'span',undefined,'attn-pill '+level);
-        if(r.level)add(pill,'span',labels[r.level]+': ','sr-only');add(pill,'span',r.level?expiryText(days):aheadText(days));}
+        if(r.level)add(pill,'span',labels[r.level]+': ','sr-only');add(pill,'span',r.level?(r.compliance_type==='landlord-register'?dayText(days):expiryText(days)):aheadText(days));}
       else if(r.status!=='current')add(head,'span',words(r.status),'attn-pill neutral');
       const start=r.effective_date&&r.status==='pending'?'Starts '+date(r.effective_date):'';
-      add(li,'p',[start,r.expiry_date?(typeof days==='number'&&days<0?'Expired ':'Expires ')+date(r.expiry_date):'No expiry date recorded',
+      add(li,'p',[start,r.expiry_date?(r.compliance_type==='landlord-register'?(unregistered(r)?'Register by ':typeof days==='number'&&days<0?'Renewal was due ':'Renewal due ')
+          :typeof days==='number'&&days<0?'Expired ':'Expires ')+date(r.expiry_date):'No expiry date recorded',
         r.renewal_status&&r.status==='current'?'Renewal '+words(r.renewal_status).toLowerCase():'',r.provider].filter(Boolean).join(' · '),'attn-sub');
       if(full){const facts=certFacts(r);if(facts)add(li,'p',facts,'subtext');}
       if(r.group!=='history')certActions(li,r);
@@ -340,6 +347,10 @@
       if(!certs.length)empty(compliance.el,'No current certificates recorded.');
       {const ul=list(compliance.el),pendings=certs.filter(r=>r.status==='pending');
         for(const r of certList(ul,byType(certs.filter(r=>r.status!=='pending')),pendings,false))certRow(ul,r,null,false);}
+      // Add compliance item: a quiet link for each type this property has no current or next record of.
+      {const missing=typeOrder.filter(type=>type!=='other'&&!certs.some(r=>r.compliance_type===type));
+        if(missing.length&&response.permissions.can_write===true){const row=add(compliance.el,'div',undefined,'cert-actions');
+          for(const type of missing)asLink(quickButton(row,'Add '+words(type).toLowerCase().replace(/\b(epc|eicr)\b/g,m=>m.toUpperCase()),'add-compliance',type));}}
       const repairs=card(grid,'Maintenance');repairs.el.setAttribute('data-section','maintenance');
       {const link=add(repairs.head,'a','All');link.href='#maintenance';link.setAttribute('data-filter-property',item.property_id);}
       const jobs=[...mine(d.maintenance.groups.open),...mine(d.maintenance.groups.recurring)];
@@ -918,10 +929,19 @@
         renew:id=>{const r=[...complianceData.groups.due,...complianceData.groups.current].find(x=>x.compliance_id===id);
           const values=Object.fromEntries(renewAll.map(f=>[f,'']));
           Object.assign(values,{provider:str(r.provider),potential_energy_rating:str(r.potential_energy_rating),potential_energy_score:str(r.potential_energy_score)});
+          if(r.compliance_type==='landlord-register')return {title:unregistered(r)?'Record registration':'Renew registration',shortTitle:unregistered(r)?'Register':'Renew',
+            explain:unregistered(r)?'Once the property is registered: the date, the renewal date (a year on, as the service says) and the property registration number. This reminder then moves to Earlier.':'',
+            subtitle:[r.property_id,words(r.compliance_type),r.expiry_date?(unregistered(r)?'register by ':'renewal due ')+date(r.expiry_date):''].filter(Boolean).join(' · '),
+            fields:renewFieldsFor(r.compliance_type),choices:complianceData.choices,action:'compliance.renew',idField:'compliance_id',
+            record:{id:r.compliance_id,version:r.version},values};
           return {title:'Renew certificate',shortTitle:'Renew',explain:['insurance','other'].includes(r.compliance_type)?
               'Renewing before the start date? The new record waits as pending, this one stays current (marked arranged), and you tap Make current when it starts.':'',subtitle:[r.property_id,words(r.compliance_type),r.expiry_date?'expires '+date(r.expiry_date):''].filter(Boolean).join(' · '),
             fields:renewFieldsFor(r.compliance_type),choices:complianceData.choices,action:'compliance.renew',idField:'compliance_id',
             record:{id:r.compliance_id,version:r.version},values};},
+        'add-compliance':type=>({title:'Add '+words(type).toLowerCase().replace(/\b(epc|eicr)\b/g,m=>m.toUpperCase()),shortTitle:'Add',subtitle:item.property_id+' · '+words(type),
+          explain:type==='landlord-register'?'Not registered yet? Enter only the date this property must be registered by (your region’s deadline); record the registration later.':'',
+          fields:renewFieldsFor(type,true),choices:complianceData.choices,action:'compliance.create',idField:'property_id',record:{id:item.property_id,version:item.version},
+          values:{...Object.fromEntries(renewAll.map(f=>[f,''])),compliance_type:type}}),
         activate:id=>{const r=[...complianceData.groups.due,...complianceData.groups.current].find(x=>x.compliance_id===id);
           const now=[...complianceData.groups.due,...complianceData.groups.current].find(x=>x.status==='current'&&x.property_id===r.property_id&&x.compliance_type===r.compliance_type);
           const start=r.effective_date||r.inspection_date||r.issue_date;
