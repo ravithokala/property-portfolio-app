@@ -81,6 +81,22 @@
   const ccFields=[['type','Type','select'],['status','Status','select'],['due_date','Due date','date'],['period_start','Period start','date'],
     ['period_end','Period end','date'],['action_date','Action date','date'],['completed_date','Completed date','date'],
     ['reference','Reference','text'],['managed_by','Managed by','text'],['document','Document','text'],['notes','Notes','textarea']];
+  // From → to dates (all later ones optional on the server): the later picker opens at the earlier date and cannot go before it.
+  const datePairs=[['period_start','period_end'],['start_date','fixed_until'],['start_date','end_date']];
+  function linkDates(controls){
+    for(const from of new Set(datePairs.map(p=>p[0]))){
+      const start=controls[from],ends=datePairs.filter(p=>p[0]===from&&controls[p[1]]).map(p=>controls[p[1]]);
+      if(!start||!ends.length)continue;
+      const sync=()=>{for(const end of ends){end.min=start.value;if(start.value&&end.value&&end.value<start.value)end.value=start.value;}};
+      start.addEventListener('input',sync);start.addEventListener('change',sync);sync();
+      for(const end of ends){let filled=false;
+        // A phone picker opens at the box's value (today when empty): fill it just before, empty it again if left as it was.
+        const open=()=>{if(end.value||!start.value)return;end.value=start.value;filled=true;};
+        end.addEventListener('pointerdown',open);end.addEventListener('focus',open);
+        end.addEventListener('change',()=>{if(end.value!==start.value)filled=false;});
+        end.addEventListener('blur',()=>{if(filled&&end.value===start.value)end.value='';filled=false;});}
+    }
+  }
   function date(value) {
     if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return 'Not recorded';
     const parsed=new Date(value+'T12:00:00.000Z');
@@ -203,6 +219,7 @@
         add(alert,'p','Please fix:');const ul=add(alert,'ul');for(const issue of quick.issues)add(ul,'li',issue);}
       if(quick.message){const note=add(box.el,'p',quick.message,'note');note.setAttribute('role','alert');}
       const f=add(box.el,'form',undefined,'cc-form');f.setAttribute('data-quick-form','true');
+      const dates={};
       for(const [name,label,kind] of quick.fields){
         const wrap=add(f,'label',undefined,'field');add(wrap,'span',label);
         const current=typeof quick.values[name]==='string'?quick.values[name]:'';
@@ -216,7 +233,9 @@
         else {control=add(wrap,'input');control.type=kind==='date'?'date':'text';if(kind==='money'||kind==='rate')control.setAttribute('inputmode','decimal');
           if(kind==='number')control.setAttribute('inputmode','numeric');}
         control.name=name;control.setAttribute('name',name);if(kind!=='checkbox')control.value=current;
+        if(kind==='date')dates[name]=control;
       }
+      linkDates(dates);
       const actions=add(f,'div',undefined,'actions');
       const save=add(actions,'button',quick.saving?'Saving…':quick.saveLabel||'Save','button');save.type='submit';save.disabled=quick.saving===true;save.setAttribute('data-mutation',quick.kind+'-update');
       button(actions,'Cancel','data-quick-cancel');
@@ -397,6 +416,7 @@
           add(alert,'p','Please fix:');const ul=add(alert,'ul');for(const issue of form.issues)add(ul,'li',issue);}
         if(form.message){const m=add(box.el,'p',form.message,'note');m.setAttribute('role','alert');}
         const f=add(box.el,'form',undefined,'cc-form');f.setAttribute('data-cc-form','true');
+        const dates={};
         for(const [name,label,kind] of ccFields){
           const wrap=add(f,'label',undefined,'field');add(wrap,'span',label);
           const current=Object.hasOwn(values,name)?values[name]:(r[name]||(name==='status'&&form.mode==='create'?'pending':''));
@@ -407,7 +427,9 @@
           else if(kind==='textarea'){control=add(wrap,'textarea');control.rows=3;}
           else {control=add(wrap,'input');control.type=kind==='date'?'date':'text';}
           control.name=name;control.setAttribute('name',name);control.value=current;
+          if(kind==='date')dates[name]=control;
         }
+        linkDates(dates);
         const actions=add(f,'div',undefined,'actions');
         const save=add(actions,'button',form.saving?'Saving…':'Save','button');save.type='submit';save.disabled=form.saving===true;save.setAttribute('data-mutation','company-compliance-'+form.mode);
         button(actions,'Cancel','data-cc-cancel');
